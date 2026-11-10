@@ -1,0 +1,79 @@
+{
+  "version": "1.0.0",
+  "name": "Cognitive Curation Template",
+  "description": "Declarative information diet template balancing leisure anchors, cognitive curiosity, and targeted domain priming.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "unixporn",
+      "category": "aesthetic_leisure",
+      "description": "Desktop customization, ricing, and visual craftsmanship"
+    },
+    {
+      "name": "linux",
+      "category": "aesthetic_leisure",
+      "description": "Linux ecosystem developments and power-user workflows"
+    },
+    {
+      "name": "commandline",
+      "category": "aesthetic_leisure",
+      "description": "Terminal utilities, shell scripting, and text-based tooling"
+    },
+    {
+      "name": "AskHistorians",
+      "category": "cognitive_curiosity",
+      "description": "Strictly moderated, academic-level historical inquiries and analysis"
+    },
+    {
+      "name": "cogsci",
+      "category": "cognitive_curiosity",
+      "description": "Cognitive science, neuroscience, and mental representation models"
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "High-effort, insightful commentary and discourse highlights"
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "Thought-provoking, non-sensational long-form articles"
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "databasedevelopment",
+      "category": "domain_priming",
+      "description": "Storage engines, query optimizers, and internal database architectures"
+    },
+    {
+      "name": "softwarearchitecture",
+      "category": "domain_priming",
+      "description": "System topology, distributed patterns, and failure modes"
+    },
+    {
+      "name": "ExperiencedDevs",
+      "category": "domain_priming",
+      "description": "Senior/Staff level engineering trade-offs and team dynamics"
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "focus_domain",
+      "display_name": "Domain Focus Feed",
+      "description_md": "Curated deep-focus feed for distraction-free technical immersion.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "databasedevelopment",
+        "softwarearchitecture",
+        "ExperiencedDevs"
+      ]
+    }
+  ]
+}

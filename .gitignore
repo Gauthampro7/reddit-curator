@@ -1,0 +1,28 @@
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Sensitive Session & Authentication Data
+cookies.json
+*.cookie
+*.cookies
+.env
+*.token
+credentials.json
+session.json
+
+# Local personalized overrides
+curation_manifest.json
+manifest.local.json
+
+# System & Editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "name": "Cognitive Science & Decision Theory",
+  "description": "Information diet focused on human decision-making, behavioral economics, epistemology, and rigorous social psychology.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {"name": "unixporn", "category": "aesthetic_leisure", "description": "Visual craftsmanship and design flow"},
+    {"name": "linux", "category": "aesthetic_leisure", "description": "Open source computing environment"},
+    {"name": "AskHistorians", "category": "cognitive_curiosity", "description": "Peer-reviewed quality historiography"},
+    {"name": "AskScience", "category": "cognitive_curiosity", "description": "Empirical scientific Q&A"},
+    {"name": "TrueReddit", "category": "cognitive_curiosity", "description": "In-depth, non-sensational long reads"}
+  ],
+  "domain_priming_subreddits": [
+    {"name": "socialpsychology", "category": "domain_priming", "description": "Academic social psychology and peer dynamics"},
+    {"name": "cogsci", "category": "domain_priming", "description": "Cognitive science and mental representation"},
+    {"name": "BehavioralEconomics", "category": "domain_priming", "description": "Choice architecture, biases, and game theory"},
+    {"name": "rational", "category": "domain_priming", "description": "Rationalist discourse and heuristic modeling"},
+    {"name": "PhilosophyofScience", "category": "domain_priming", "description": "Scientific epistemology and falsification"},
+    {"name": "AskEconomics", "category": "domain_priming", "description": "Formal micro and macro-economic models"}
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "cog_science",
+      "display_name": "Cognitive Science & Rationality",
+      "description_md": "Academic social psychology, behavioral economics, and decision theory.",
+      "icon_name": "science",
+      "visibility": "private",
+      "subreddits": [
+        "socialpsychology",
+        "cogsci",
+        "BehavioralEconomics",
+        "rational",
+        "PhilosophyofScience",
+        "AskEconomics"
+      ]
+    }
+  ]
+}

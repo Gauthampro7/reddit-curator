@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "name": "Machine Learning & AI Engineering",
+  "description": "Information diet focused on open-weights model inference, neural network architectures, and applied research.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {"name": "unixporn", "category": "aesthetic_leisure", "description": "Desktop aesthetics and dev ergonomics"},
+    {"name": "linux", "category": "aesthetic_leisure", "description": "Linux operating system ecosystem"},
+    {"name": "commandline", "category": "aesthetic_leisure", "description": "Terminal and data processing utilities"},
+    {"name": "cogsci", "category": "cognitive_curiosity", "description": "Cognitive science and biological neural models"},
+    {"name": "PhilosophyofScience", "category": "cognitive_curiosity", "description": "Scientific epistemology and theory evaluation"},
+    {"name": "DepthHub", "category": "cognitive_curiosity", "description": "Curated insightful discussions"}
+  ],
+  "domain_priming_subreddits": [
+    {"name": "MachineLearning", "category": "domain_priming", "description": "Technical ML papers, architectures, and research"},
+    {"name": "LocalLLaMA", "category": "domain_priming", "description": "Quantization, local inference, and open weights"},
+    {"name": "artificial", "category": "domain_priming", "description": "AI developments and foundational implications"},
+    {"name": "Compilers", "category": "domain_priming", "description": "MLIR, LLVM, and tensor compilers"}
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "ai_research",
+      "display_name": "AI & Machine Learning Research",
+      "description_md": "Technical research papers, architecture breakdowns, and local model inference.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "MachineLearning",
+        "LocalLLaMA",
+        "Compilers"
+      ]
+    }
+  ]
+}

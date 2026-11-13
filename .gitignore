@@ -7,6 +7,13 @@ __pycache__/
 .coverage
 htmlcov/
 
+# Virtual Environments & Packaging
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
 # Sensitive Session & Authentication Data
 cookies.json
 *.cookie
@@ -16,9 +23,12 @@ cookies.json
 credentials.json
 session.json
 
-# Local personalized overrides
-curation_manifest.json
+# Local Personalized Overrides & Runtime State
+manifest.json
 manifest.local.json
+curation_manifest.json
+.curator_snapshots/
+.curator_cache/
 
 # System & Editor files
 .DS_Store

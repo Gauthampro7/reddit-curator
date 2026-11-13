@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 import re
 import time
@@ -15,6 +16,8 @@ _BASE_URL = "https://oauth.reddit.com"
 _FEED_NAME_RE = re.compile(r"^[a-z0-9_]{1,50}$")
 _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 _MAX_CUSTOM_FEED_SUBS = 100
+
+logger = logging.getLogger(__name__)
 
 
 def validate_feed_name(feed_name: str) -> str:
@@ -145,6 +148,11 @@ class RedditAPIClient:
                     sleep_for = max(0.1, min(float(reset_raw), 60.0))
                 except (TypeError, ValueError):
                     sleep_for = 1.0
+            logger.info(
+                "Reddit API proactive rate-limit throttle (remaining=%.1f); sleeping %.2fs.",
+                remaining,
+                sleep_for,
+            )
             time.sleep(sleep_for)
 
     def _request(
@@ -367,9 +375,21 @@ class RedditAPIClient:
             visibility = str(feed.get("visibility") or "private")
             subreddits = [str(s) for s in feed.get("subreddits", [])]
 
-            for chunk_name, chunk_display, chunk_subs in _partition_feed_subreddits(
-                raw_name, display_name, subreddits
-            ):
+            try:
+                partitions = _partition_feed_subreddits(raw_name, display_name, subreddits)
+            except ValueError as exc:
+                err_key = raw_name or "<empty>"
+                results[err_key] = {
+                    "status": "failed",
+                    "http_code": None,
+                    "endpoint": f"/api/multi/user/{user_lower}/m/{err_key}",
+                    "path": f"/user/{user_lower}/m/{err_key}",
+                    "subreddits": subreddits,
+                    "error": str(exc),
+                }
+                continue
+
+            for chunk_name, chunk_display, chunk_subs in partitions:
                 multipath = f"/user/{user_lower}/m/{chunk_name}"
                 endpoint = f"/api/multi{multipath}"
 
@@ -397,7 +417,7 @@ class RedditAPIClient:
 
                 try:
                     resp = self._request("PUT", endpoint, data=form_data)
-                    if resp.status_code not in (200, 201):
+                    if resp.status_code not in (200, 201, 400, 401, 403):
                         resp = self._request("POST", endpoint, data=form_data)
                 except requests.RequestException as exc:
                     results[chunk_name] = {

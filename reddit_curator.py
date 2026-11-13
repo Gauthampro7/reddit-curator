@@ -15,8 +15,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.util
 import json
 import logging
+import os
+import platform
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,10 +28,15 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import requests
 
+from rcurator import __version__
 from rcurator.analytics import FeedHealthAuditor
 from rcurator.browser import BrowserLauncher
 from rcurator.cdp_client import (
+    CDPClient,
     CDPError,
+    _extract_token_candidates_from_tab,
+    _find_reddit_page_target,
+    _validate_reddit_token,
     acquire_reddit_session,
     activate_following_feed,
     validate_cdp_port,
@@ -46,7 +55,7 @@ from rcurator.engine.ontology import OntologyRepository, normalize_manifest
 from rcurator.engine.pipeline import AutoPresetGenerator
 from rcurator.mixer import PresetMixer
 from rcurator.nlp.tokenizer import TechnicalTokenizer
-from rcurator.reddit_api import RedditAPIClient
+from rcurator.reddit_api import RedditAPIClient, _partition_feed_subreddits, validate_feed_name
 from rcurator.sources.github import GitHubMiner
 from rcurator.sources.resume import ResumeParser
 from rcurator.sources.types import SignalEvidence
@@ -67,6 +76,26 @@ CHROME_USER_AGENT = (
 )
 
 logger = logging.getLogger("reddit_curator")
+
+
+def resolve_snapshots_dir(preferred: Path | None = None) -> Path:
+    """Return preferred snapshots directory, falling back to ~/.config/reddit-curator/snapshots if read-only."""
+    candidate = Path(preferred) if preferred is not None else SNAPSHOTS_DIR
+    if preferred is not None:
+        return candidate
+    if candidate.exists():
+        if os.access(candidate, os.W_OK | os.X_OK):
+            return candidate
+    elif candidate.parent.exists() and os.access(candidate.parent, os.W_OK | os.X_OK):
+        return candidate
+    return Path.home() / ".config" / "reddit-curator" / "snapshots"
+
+
+def validate_studio_port(port: int) -> int:
+    """Validate that a Web Studio TCP port is within 1..65535."""
+    if isinstance(port, bool) or not isinstance(port, int) or not (1 <= port <= 65535):
+        raise ValueError(f"Invalid studio port: {port!r}; must be in range 1..65535.")
+    return port
 
 
 def resolve_manifest_path(
@@ -289,7 +318,9 @@ class RedditCurator:
         self.dry_run = bool(dry_run)
         self.prune = bool(prune)
         self.keep: set[str] = {str(x).strip() for x in (keep or ()) if str(x).strip()}
-        self.snapshots_dir = Path(snapshots_dir) if snapshots_dir is not None else SNAPSHOTS_DIR
+        self.snapshots_dir = (
+            Path(snapshots_dir) if snapshots_dir is not None else resolve_snapshots_dir()
+        )
         self.ontology = ontology or (
             OntologyRepository.load(ONTOLOGY_PATH)
             if ONTOLOGY_PATH.is_file()
@@ -445,7 +476,7 @@ class RedditCurator:
         }
 
     def verify_custom_feed(self, session: RedditSession) -> Dict[str, Any]:
-        """Verify custom feed existence and constituent subreddit membership."""
+        """Verify custom feed existence and constituent subreddit membership (including >100-sub partitions)."""
         api = self._get_api_client(session)
         live_feeds = api.fetch_custom_feeds()
         live_by_name = {
@@ -458,47 +489,67 @@ class RedditCurator:
         results: Dict[str, Any] = {}
         for feed in custom_feeds:
             feed_name = str(feed["feed_name"])
+            display_name = str(feed.get("display_name") or feed_name)
             expected_subs = [str(s) for s in feed.get("subreddits", [])]
-            live_feed = live_by_name.get(feed_name.lower())
+            try:
+                partitions = _partition_feed_subreddits(feed_name, display_name, expected_subs)
+            except ValueError:
+                partitions = [(feed_name, display_name, expected_subs)]
 
-            if live_feed is None:
-                results[feed_name] = {
-                    "exists": False,
-                    "is_complete": False,
-                    "missing_subreddits": expected_subs,
+            for chunk_name, _chunk_display, chunk_subs in partitions:
+                live_feed = live_by_name.get(chunk_name.lower())
+
+                if live_feed is None:
+                    results[chunk_name] = {
+                        "exists": False,
+                        "is_complete": False,
+                        "missing_subreddits": chunk_subs,
+                        "extra_subreddits": [],
+                    }
+                    continue
+
+                present_subs = [str(s) for s in live_feed.get("subreddits", [])]
+                present_lower = {s.lower() for s in present_subs}
+                expected_lower = {s.lower() for s in chunk_subs}
+                missing_subs = [s for s in chunk_subs if s.lower() not in present_lower]
+                extra_subs = [s for s in present_subs if s.lower() not in expected_lower]
+
+                results[chunk_name] = {
+                    "exists": True,
+                    "display_name": live_feed.get("display_name"),
+                    "path": live_feed.get("path"),
+                    "subreddits_count": len(present_subs),
+                    "expected_count": len(chunk_subs),
+                    "is_complete": len(missing_subs) == 0 and len(extra_subs) == 0,
+                    "missing_subreddits": missing_subs,
+                    "extra_subreddits": extra_subs,
+                    "subreddits": present_subs,
                 }
-                continue
-
-            present_subs = [str(s) for s in live_feed.get("subreddits", [])]
-            present_lower = {s.lower() for s in present_subs}
-            missing_subs = [s for s in expected_subs if s.lower() not in present_lower]
-
-            results[feed_name] = {
-                "exists": True,
-                "display_name": live_feed.get("display_name"),
-                "path": live_feed.get("path"),
-                "subreddits_count": len(present_subs),
-                "expected_count": len(expected_subs),
-                "is_complete": len(missing_subs) == 0,
-                "missing_subreddits": missing_subs,
-                "subreddits": present_subs,
-            }
 
         return results
 
-    def verify_all(self, session: RedditSession) -> Dict[str, Any]:
-        """Run comprehensive verification of anchors, priming subs, and custom feeds."""
+    def verify_all(
+        self,
+        session: RedditSession,
+        reloaded_following: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Run comprehensive verification of anchors, priming subs, custom feeds, and Following lock."""
         subs = self.verify_subscriptions(session)
         feeds = self.verify_custom_feed(session)
-        return {
+        following_ok = True if reloaded_following is None else bool(reloaded_following)
+        out: Dict[str, Any] = {
             "subscriptions": subs,
             "custom_feeds": feeds,
             "all_healthy": (
                 len(subs.get("missing_anchors", [])) == 0
                 and len(subs.get("missing_priming", [])) == 0
                 and all(f.get("is_complete", False) for f in feeds.values())
+                and following_ok
             ),
         }
+        if reloaded_following is not None:
+            out["reloaded_following"] = bool(reloaded_following)
+        return out
 
     def build_offline_dry_run_preview(self, reason: str | None = None) -> Dict[str, Any]:
         """Build a 100% offline dry-run preview when Chrome CDP is not reachable."""
@@ -551,7 +602,7 @@ class RedditCurator:
         reloaded = await self.reload_to_following_feed(session)
 
         # 4. Verify resulting state
-        verification = self.verify_all(session)
+        verification = self.verify_all(session, reloaded_following=reloaded)
         analytics = FeedHealthAuditor(self.ontology).audit_manifest(self.manifest)
 
         return {
@@ -567,196 +618,693 @@ class RedditCurator:
         }
 
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse frozen v2.0 CLI subcommands and flags (#9 §4)."""
+def _build_parser() -> argparse.ArgumentParser:
+    """Construct the grouped CLI argument parser."""
+    epilog = (
+        "Quickstart Examples:\n"
+        "  python3 reddit_curator.py doctor\n"
+        "  python3 reddit_curator.py --list-presets --query rust\n"
+        "  python3 reddit_curator.py --preset systems_engineering --dry-run\n"
+        "  python3 reddit_curator.py --preset systems_engineering --output out.json\n"
+        "  python3 reddit_curator.py --compare-presets systems_engineering,rust_and_compilers\n"
+        "  python3 reddit_curator.py wizard\n"
+        "  python3 reddit_curator.py studio\n"
+    )
     parser = argparse.ArgumentParser(
-        description="Reddit Passive Cognitive Curator v2.0 via Chrome DevTools Protocol."
+        description="Reddit Passive Cognitive Curator v2.0 via Chrome DevTools Protocol.",
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["sync", "studio", "ui", "wizard"],
+        choices=["sync", "studio", "ui", "wizard", "doctor"],
         default="sync",
-        help="Optional positional command (default: sync).",
-    )
-    # Legacy 8 flags
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=DEFAULT_CDP_PORT,
-        help=f"CDP remote debugging port (default: {DEFAULT_CDP_PORT})",
+        help="Optional positional command (sync, studio/ui, wizard, doctor).",
     )
     parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+
+    grp_target = parser.add_argument_group("Target & Preset Inspection")
+    grp_target.add_argument(
         "--manifest",
         type=Path,
         default=None,
         help="Path to manifest JSON file.",
     )
-    parser.add_argument(
+    grp_target.add_argument(
         "--preset",
         type=str,
         default=None,
         help="Named preset from presets/ directory.",
     )
-    parser.add_argument(
+    grp_target.add_argument(
         "--list-presets",
         action="store_true",
-        help="List available presets and exit.",
+        help="List available presets and exit (combine with --query to filter).",
     )
-    parser.add_argument(
-        "--one-shot",
+    grp_target.add_argument(
+        "--preset-info",
+        type=str,
+        default=None,
+        help="Show full subreddits, custom feeds, and diet audit for a preset.",
+    )
+    grp_target.add_argument(
+        "--compare-presets",
+        type=str,
+        default=None,
+        help="Compare two presets side-by-side (e.g. systems_engineering,rust_and_compilers).",
+    )
+    grp_target.add_argument(
+        "--validate",
         action="store_true",
-        help="Execute full one-shot curation and feed locking.",
+        help="Validate selected --manifest or --preset schema and Diet Health.",
     )
-    parser.add_argument(
-        "--agent",
-        action="store_true",
-        help="Agent mode: suppresses verbose logging and outputs clean JSON to stdout.",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview curation operations without executing mutations.",
-    )
-    parser.add_argument(
-        "--verify",
-        action="store_true",
-        help="Verify active subscriptions and custom feed without mutating.",
-    )
-    # New 23 frozen v2.0 flags
-    parser.add_argument(
+
+    grp_gen = parser.add_argument_group("Auto-Curation & Mixing")
+    grp_gen.add_argument(
         "--from-workspace",
         type=Path,
         default=None,
         help="Mine signals deterministically from a local workspace directory.",
     )
-    parser.add_argument(
+    grp_gen.add_argument(
         "--from-github",
         type=str,
         default=None,
         help="Mine signals from a GitHub username's public profile, repos, and stars.",
     )
-    parser.add_argument(
+    grp_gen.add_argument(
         "--github-token",
         type=str,
         default=None,
         help="Optional GitHub PAT (or set GITHUB_TOKEN) to raise API rate limits.",
     )
-    parser.add_argument(
+    grp_gen.add_argument(
         "--from-resume",
         type=Path,
         default=None,
         help="Parse a local .pdf, .md, .txt, or .tex resume into weighted skill signals.",
     )
-    parser.add_argument(
+    grp_gen.add_argument(
         "--query",
         type=str,
         default=None,
-        help="Free-text technical/research topic query for deterministic curation.",
+        help="Free-text technical/research topic query (or filter for --list-presets).",
     )
-    parser.add_argument(
+    grp_gen.add_argument(
         "--mix",
         type=str,
         default=None,
         help="Blend presets with convex weights (e.g. systems_engineering:0.6,rust_and_compilers:0.4).",
     )
-    parser.add_argument(
+    grp_gen.add_argument(
         "--ratio",
         type=str,
         default="40,35,25",
         help="Target Golden Ratio percentages aesthetic,cognitive,domain (default: 40,35,25).",
     )
-    parser.add_argument(
+    grp_gen.add_argument(
         "--tier1-count",
         type=int,
         default=18,
         help="Target number of Tier-1 communities in the Following feed (>= 3, default: 18).",
     )
-    parser.add_argument(
+    grp_gen.add_argument(
         "--discover-online",
         action="store_true",
         help="Optionally enrich ontology candidates via Reddit /subreddits/search.",
     )
-    parser.add_argument(
+    grp_gen.add_argument(
         "--output",
         type=Path,
         default=None,
-        help="Write generated or mixed manifest JSON to disk.",
+        help="Write generated, mixed, or normalized preset/manifest JSON to disk.",
     )
-    parser.add_argument(
+
+    grp_sync = parser.add_argument_group("Sync, Diff, Audit & Snapshot Operations")
+    grp_sync.add_argument(
+        "--one-shot",
+        action="store_true",
+        help="Execute full one-shot curation and feed locking.",
+    )
+    grp_sync.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview curation operations without executing mutations.",
+    )
+    grp_sync.add_argument(
+        "--verify",
+        action="store_true",
+        help="Verify active subscriptions and custom feed without mutating.",
+    )
+    grp_sync.add_argument(
         "--audit",
         action="store_true",
         help="Run Diet Health audit on the selected or generated manifest.",
     )
-    parser.add_argument(
+    grp_sync.add_argument(
         "--audit-live",
         action="store_true",
         help="Fetch live Reddit subscriptions via CDP and run Diet Health audit.",
     )
-    parser.add_argument(
+    grp_sync.add_argument(
         "--diff",
         action="store_true",
         help="Compute and display subscription/custom-feed diff against live Reddit state.",
     )
-    parser.add_argument(
+    grp_sync.add_argument(
         "--prune",
         action="store_true",
         help="Opt-in removal of unmanaged subscriptions during sync.",
     )
-    parser.add_argument(
+    grp_sync.add_argument(
         "--keep",
         type=str,
         default="",
         help="Comma-separated subreddit allowlist preserved when --prune is enabled.",
     )
-    parser.add_argument(
+    grp_sync.add_argument(
         "--snapshot",
         action="store_true",
         help="Capture a timestamped backup snapshot in .curator_snapshots/ and exit.",
     )
-    parser.add_argument(
+    grp_sync.add_argument(
         "--list-snapshots",
         action="store_true",
         help="List saved backup snapshots from .curator_snapshots/.",
     )
-    parser.add_argument(
+    grp_sync.add_argument(
         "--rollback",
         type=str,
         default=None,
         help="Restore subscriptions and custom feeds from 'latest' or a specific snapshot ID.",
     )
-    parser.add_argument(
+
+    grp_runtime = parser.add_argument_group("Browser, Studio & Runtime")
+    grp_runtime.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_CDP_PORT,
+        help=f"CDP remote debugging port (default: {DEFAULT_CDP_PORT})",
+    )
+    grp_runtime.add_argument(
         "--launch-browser",
         action="store_true",
         help="Detect and launch Chrome/Chromium/Brave (RPM or Flatpak) with CDP enabled.",
     )
-    parser.add_argument(
+    grp_runtime.add_argument(
         "--browser",
         type=str,
         default=None,
         help="Preferred browser binary or Flatpak ID for --launch-browser.",
     )
-    parser.add_argument(
+    grp_runtime.add_argument(
         "--studio",
         action="store_true",
         help="Start the local Web Studio HTTP server.",
     )
-    parser.add_argument(
+    grp_runtime.add_argument(
         "--studio-port",
         type=int,
         default=DEFAULT_STUDIO_PORT,
         help=f"TCP port for the local Web Studio server (default: {DEFAULT_STUDIO_PORT}).",
     )
-    parser.add_argument(
+    grp_runtime.add_argument(
         "--no-open-browser",
         action="store_true",
         help="Do not auto-open the Web Studio URL in your browser on startup.",
     )
-    return parser.parse_args(argv)
+    grp_runtime.add_argument(
+        "--agent",
+        action="store_true",
+        help="Agent mode: suppresses verbose logging and outputs clean JSON to stdout.",
+    )
+    return parser
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse frozen v2.0 CLI subcommands and flags (#9 §4)."""
+    return _build_parser().parse_args(argv)
+
+
+def _format_quickstart_and_help() -> str:
+    """Render safe zero-argument Quickstart banner and grouped CLI help."""
+    banner = (
+        f"reddit-curator v{__version__} — Deterministic Cognitive Information Diet Engine\n"
+        "=" * 72 + "\n"
+        "Safe Quickstart (no arguments passed — zero Reddit mutations performed):\n"
+        "  1. Environment diagnostics : python3 reddit_curator.py doctor\n"
+        "  2. Interactive wizard      : python3 reddit_curator.py wizard\n"
+        "  3. Local Web Studio        : python3 reddit_curator.py studio\n"
+        "  4. Offline preset preview  : python3 reddit_curator.py --preset systems_engineering --dry-run\n"
+        "  5. Browse 17 domain packs  : python3 reddit_curator.py --list-presets\n\n"
+    )
+    return banner + _build_parser().format_help()
 
 
 def _emit_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, default=str))
+
+
+def _load_ontology() -> OntologyRepository:
+    return (
+        OntologyRepository.load(ONTOLOGY_PATH)
+        if ONTOLOGY_PATH.is_file()
+        else OntologyRepository.load()
+    )
+
+
+def _filter_presets_by_query(
+    presets: list[dict[str, Any]], query: str | None
+) -> list[dict[str, Any]]:
+    """Filter preset summaries case-insensitively by id, name, description, or subreddit."""
+    q = str(query or "").strip().lower()
+    if not q:
+        return presets
+    matched: list[dict[str, Any]] = []
+    for item in presets:
+        haystack = " ".join(
+            [
+                str(item.get("id", "")),
+                str(item.get("name", "")),
+                str(item.get("description", "")),
+            ]
+        ).lower()
+        if q in haystack:
+            matched.append(item)
+            continue
+        ppath = Path(str(item.get("path", "")))
+        if ppath.is_file():
+            try:
+                raw = json.loads(ppath.read_text(encoding="utf-8"))
+                sub_names: list[str] = []
+                for key in ("anchor_subreddits", "domain_priming_subreddits"):
+                    for entry in raw.get(key) or []:
+                        sub_names.append(
+                            str(entry.get("name") if isinstance(entry, dict) else entry)
+                        )
+                for feed in raw.get("custom_feeds") or []:
+                    if isinstance(feed, dict):
+                        sub_names.extend(str(s) for s in (feed.get("subreddits") or []))
+                if any(q in s.lower() for s in sub_names):
+                    matched.append(item)
+            except (OSError, ValueError):
+                pass
+    return matched
+
+
+async def _passive_probe_reddit_auth(ws_url: str) -> tuple[bool, str | None, str]:
+    """Passively inspect an open Reddit tab for OAuth session without reloading or opening tabs."""
+    try:
+        async with CDPClient(ws_url) as cdp:
+            candidates = await _extract_token_candidates_from_tab(cdp)
+    except Exception:
+        return False, None, "cdp_probe_failed"
+
+    if not candidates:
+        return False, None, "unauthenticated"
+
+    for token in candidates:
+        try:
+            username = await asyncio.to_thread(_validate_reddit_token, token)
+        except CDPError:
+            return False, None, "network_error"
+        if username:
+            return True, username, "authenticated"
+    return False, None, "unauthenticated"
+
+
+def run_doctor(cdp_port: int = DEFAULT_CDP_PORT) -> dict[str, Any]:
+    """Run read-only environment, ontology, browser, CDP, auth, and PDF tool diagnostics."""
+    port = validate_cdp_port(cdp_port)
+    hints: list[str] = []
+
+    py_ver = platform.python_version()
+    py_ok = sys.version_info >= (3, 10)
+    if not py_ok:
+        hints.append("Upgrade Python to 3.10+ (Fedora: sudo dnf install python3).")
+
+    try:
+        import websockets as _ws_mod
+
+        ws_ver = str(getattr(_ws_mod, "__version__", "installed"))
+    except Exception:
+        ws_ver = "missing"
+        hints.append("Install websockets>=11.0 (pip install -r requirements.txt).")
+
+    req_ver = str(getattr(requests, "__version__", "installed"))
+
+    ontology_loaded = False
+    ontology_count = 0
+    ontology_error: str | None = None
+    try:
+        ont = _load_ontology()
+        ontology_loaded = True
+        ontology_count = len(ont)
+    except Exception as exc:
+        ontology_error = str(exc)
+        hints.append("Ensure curator_data/subreddit_ontology.json is present or reinstall package.")
+
+    presets = list_presets_metadata(PRESETS_DIR)
+    presets_loaded = len(presets) > 0
+    if not presets_loaded:
+        hints.append(f"No preset JSON files found in {PRESETS_DIR}.")
+
+    browsers = BrowserLauncher.detect_browsers()
+    if not browsers:
+        hints.append(
+            "No Chromium/Chrome/Brave browser detected. Install on Fedora via "
+            "'sudo dnf install chromium' or 'flatpak install flathub com.google.Chrome'."
+        )
+
+    cdp_reachable = False
+    browser_version: str | None = None
+    reddit_tab_open = False
+    reddit_ws_url: str | None = None
+    try:
+        ver_resp = requests.get(f"http://127.0.0.1:{port}/json/version", timeout=1.5)
+        if ver_resp.status_code == 200:
+            ver_data = ver_resp.json()
+            if isinstance(ver_data, dict):
+                cdp_reachable = True
+                browser_version = str(ver_data.get("Browser") or "") or None
+    except (requests.RequestException, ValueError):
+        cdp_reachable = False
+
+    if cdp_reachable:
+        try:
+            list_resp = requests.get(f"http://127.0.0.1:{port}/json/list", timeout=1.5)
+            if list_resp.status_code == 200:
+                targets = list_resp.json()
+                if isinstance(targets, list):
+                    reddit_target = _find_reddit_page_target(
+                        [t for t in targets if isinstance(t, dict)]
+                    )
+                    if reddit_target is not None:
+                        reddit_tab_open = True
+                        raw_ws = reddit_target.get("webSocketDebuggerUrl")
+                        if isinstance(raw_ws, str) and raw_ws.strip():
+                            reddit_ws_url = raw_ws.strip()
+        except (requests.RequestException, ValueError):
+            pass
+    else:
+        hints.append(
+            f"CDP port {port} is not reachable. Launch a debugging browser with: "
+            f"python3 reddit_curator.py --launch-browser --port {port}"
+        )
+
+    reddit_authenticated = False
+    reddit_username: str | None = None
+    auth_status = "cdp_unreachable"
+    if cdp_reachable:
+        if not reddit_tab_open or not reddit_ws_url:
+            auth_status = "no_reddit_tab"
+            hints.append(
+                "Open https://www.reddit.com in the debugging browser and sign in."
+            )
+        else:
+            reddit_authenticated, reddit_username, auth_status = asyncio.run(
+                _passive_probe_reddit_auth(reddit_ws_url)
+            )
+            if auth_status == "unauthenticated":
+                hints.append(
+                    "Sign in to https://www.reddit.com in the debugging browser."
+                )
+            elif auth_status == "network_error":
+                hints.append(
+                    "Reddit tab found, but oauth.reddit.com could not be reached to validate session."
+                )
+
+    pdftotext_path = shutil.which("pdftotext")
+    pypdf_available = importlib.util.find_spec("pypdf") is not None
+    if pypdf_available:
+        pdf_backend = "pypdf"
+    elif pdftotext_path:
+        pdf_backend = "pdftotext"
+    else:
+        pdf_backend = "builtin_pure_python"
+        hints.append(
+            "Optional PDF enhancement: install Poppler on Fedora ('sudo dnf install poppler-utils') "
+            "or 'pip install pypdf' (built-in pure-Python PDF parser remains active)."
+        )
+
+    snaps_dir = resolve_snapshots_dir()
+    snaps_writable = False
+    if snaps_dir.exists():
+        snaps_writable = os.access(snaps_dir, os.W_OK | os.X_OK)
+    else:
+        parent = snaps_dir.parent
+        while not parent.exists() and parent != parent.parent:
+            parent = parent.parent
+        snaps_writable = os.access(parent, os.W_OK | os.X_OK)
+
+    return {
+        "python": {"version": py_ver, "ok": py_ok},
+        "dependencies": {"requests": req_ver, "websockets": ws_ver},
+        "ontology": {
+            "loaded": ontology_loaded,
+            "count": ontology_count,
+            "path": str(ONTOLOGY_PATH),
+            "error": ontology_error,
+        },
+        "presets": {
+            "loaded": presets_loaded,
+            "count": len(presets),
+            "dir": str(PRESETS_DIR),
+        },
+        "browsers": browsers,
+        "cdp": {
+            "port": port,
+            "reachable": cdp_reachable,
+            "browser_version": browser_version,
+            "reddit_tab_open": reddit_tab_open,
+        },
+        "reddit_auth": {
+            "authenticated": reddit_authenticated,
+            "username": reddit_username,
+            "status": auth_status,
+        },
+        "pdf_tools": {
+            "pdftotext_path": pdftotext_path,
+            "pypdf_available": pypdf_available,
+            "active_backend": pdf_backend,
+        },
+        "snapshots": {
+            "dir": str(snaps_dir),
+            "writable": snaps_writable,
+        },
+        "hints": hints,
+    }
+
+
+def format_doctor_report(report: dict[str, Any]) -> str:
+    """Format `doctor` diagnostics into a concise terminal checklist."""
+    py = report.get("python", {})
+    deps = report.get("dependencies", {})
+    ont = report.get("ontology", {})
+    pre = report.get("presets", {})
+    browsers = report.get("browsers", [])
+    cdp = report.get("cdp", {})
+    auth = report.get("reddit_auth", {})
+    pdf = report.get("pdf_tools", {})
+    snaps = report.get("snapshots", {})
+
+    browser_str = (
+        ", ".join(f"{b['name']} ({b['kind']})" for b in browsers)
+        if browsers
+        else "none detected"
+    )
+    cdp_state = (
+        f"reachable ({cdp.get('browser_version') or 'CDP'})"
+        if cdp.get("reachable")
+        else "unreachable"
+    )
+    auth_str = (
+        f"signed in as u/{auth['username']}"
+        if auth.get("authenticated")
+        else str(auth.get("status") or "unauthenticated")
+    )
+    lines = [
+        f"reddit-curator v{__version__} Doctor Diagnostics",
+        "=" * 64,
+        f"  Python             : {py.get('version')} ({'OK' if py.get('ok') else 'OUTDATED'})",
+        f"  Dependencies       : requests={deps.get('requests')}, websockets={deps.get('websockets')}",
+        f"  Ontology           : {'OK' if ont.get('loaded') else 'FAIL'} ({ont.get('count', 0)} subreddits)",
+        f"  Presets            : {'OK' if pre.get('loaded') else 'MISSING'} ({pre.get('count', 0)} presets)",
+        f"  Browsers           : {browser_str}",
+        f"  CDP (127.0.0.1:{cdp.get('port')}) : {cdp_state} (reddit_tab={cdp.get('reddit_tab_open')})",
+        f"  Reddit Auth        : {auth_str}",
+        f"  PDF Tools          : pypdf={pdf.get('pypdf_available')}, "
+        f"pdftotext={pdf.get('pdftotext_path') or 'missing'} (backend={pdf.get('active_backend')})",
+        f"  Snapshots Dir      : {snaps.get('dir')} ({'writable' if snaps.get('writable') else 'read-only'})",
+    ]
+    hints = report.get("hints") or []
+    if hints:
+        lines.append("  Fedora / Next-Step Hints:")
+        for hint in hints:
+            lines.append(f"    * {hint}")
+    return "\n".join(lines)
+
+
+def _compare_presets(
+    preset_spec: str, ontology: OntologyRepository
+) -> dict[str, Any]:
+    """Load, normalize, audit, and compare two presets 'A,B'."""
+    parts = [p.strip() for p in str(preset_spec or "").split(",") if p.strip()]
+    if len(parts) != 2:
+        raise ValueError(
+            f"--compare-presets requires exactly two comma-separated preset names (e.g. A,B); got {preset_spec!r}."
+        )
+    id_a, id_b = parts
+    path_a = resolve_manifest_path(preset_arg=id_a)
+    path_b = resolve_manifest_path(preset_arg=id_b)
+    norm_a = normalize_manifest(json.loads(path_a.read_text(encoding="utf-8")), ontology)
+    norm_b = normalize_manifest(json.loads(path_b.read_text(encoding="utf-8")), ontology)
+
+    auditor = FeedHealthAuditor(ontology)
+    audit_a = auditor.audit_manifest(norm_a)
+    audit_b = auditor.audit_manifest(norm_b)
+
+    def _tier1_names(m: dict[str, Any]) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for key in ("anchor_subreddits", "domain_priming_subreddits"):
+            for item in m.get(key) or []:
+                name = str(item["name"] if isinstance(item, dict) else item).strip()
+                if name and name.lower() not in seen:
+                    seen.add(name.lower())
+                    out.append(name)
+        return out
+
+    subs_a = _tier1_names(norm_a)
+    subs_b = _tier1_names(norm_b)
+    map_a = {s.lower(): s for s in subs_a}
+    map_b = {s.lower(): s for s in subs_b}
+
+    shared = [map_a[k] for k in map_a if k in map_b]
+    only_a = [v for k, v in map_a.items() if k not in map_b]
+    only_b = [v for k, v in map_b.items() if k not in map_a]
+
+    return {
+        "preset_a": {
+            "id": id_a,
+            "name": norm_a.get("name"),
+            "tier1_count": len(subs_a),
+            "custom_feeds_count": len(norm_a.get("custom_feeds") or []),
+            "audit": audit_a,
+        },
+        "preset_b": {
+            "id": id_b,
+            "name": norm_b.get("name"),
+            "tier1_count": len(subs_b),
+            "custom_feeds_count": len(norm_b.get("custom_feeds") or []),
+            "audit": audit_b,
+        },
+        "shared_subreddits": shared,
+        "only_in_a": only_a,
+        "only_in_b": only_b,
+    }
+
+
+def _format_preset_comparison(comp: dict[str, Any]) -> str:
+    """Format side-by-side preset comparison for terminal output."""
+    pa = comp["preset_a"]
+    pb = comp["preset_b"]
+    aa = pa["audit"]
+    ab = pb["audit"]
+    act_a = aa.get("actual_velocity_distribution_pct", {})
+    act_b = ab.get("actual_velocity_distribution_pct", {})
+    lines = [
+        f"Preset Comparison: {pa['id']} vs {pb['id']}",
+        "=" * 72,
+        f"  {'Metric':<24} | {pa['id']:<21} | {pb['id']:<21}",
+        "-" * 72,
+        f"  {'Title':<24} | {str(pa['name'])[:21]:<21} | {str(pb['name'])[:21]:<21}",
+        f"  {'Tier-1 Subreddits':<24} | {pa['tier1_count']:<21} | {pb['tier1_count']:<21}",
+        f"  {'Custom Feeds':<24} | {pa['custom_feeds_count']:<21} | {pb['custom_feeds_count']:<21}",
+        f"  {'Composite Health':<24} | {aa.get('composite_health_score', 0.0):<21.2f} | {ab.get('composite_health_score', 0.0):<21.2f}",
+        f"  {'Golden Ratio Fidelity':<24} | {aa.get('golden_ratio_fidelity_score', 0.0):<21.2f} | {ab.get('golden_ratio_fidelity_score', 0.0):<21.2f}",
+        f"  {'Daily Velocity':<24} | {aa.get('total_daily_velocity', 0.0):<21.1f} | {ab.get('total_daily_velocity', 0.0):<21.1f}",
+        f"  {'Aes/Cog/Dom (%)':<24} | "
+        f"{act_a.get('aesthetic_leisure', 0):.0f}/{act_a.get('cognitive_curiosity', 0):.0f}/{act_a.get('domain_priming', 0):.0f}"
+        f"{'':<13} | "
+        f"{act_b.get('aesthetic_leisure', 0):.0f}/{act_b.get('cognitive_curiosity', 0):.0f}/{act_b.get('domain_priming', 0):.0f}",
+        "-" * 72,
+        f"  Shared Tier-1 ({len(comp['shared_subreddits'])}): {', '.join(f'r/{s}' for s in comp['shared_subreddits']) or 'none'}",
+        f"  Only in {pa['id']} ({len(comp['only_in_a'])}): {', '.join(f'r/{s}' for s in comp['only_in_a'][:12])}{'...' if len(comp['only_in_a']) > 12 else ''}",
+        f"  Only in {pb['id']} ({len(comp['only_in_b'])}): {', '.join(f'r/{s}' for s in comp['only_in_b'][:12])}{'...' if len(comp['only_in_b']) > 12 else ''}",
+    ]
+    return "\n".join(lines)
+
+
+def _validate_manifest_payload(
+    raw: Any, ontology: OntologyRepository
+) -> tuple[dict[str, Any] | None, list[str], list[str], dict[str, Any] | None]:
+    """Validate manifest schema, types, feed names, and Diet Health audit."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(raw, dict):
+        return None, ["Manifest root must be a JSON object."], warnings, None
+
+    if not str(raw.get("name") or "").strip():
+        warnings.append("Manifest is missing a non-empty 'name' field.")
+
+    for key in (
+        "anchor_subreddits",
+        "domain_priming_subreddits",
+        "tier1_systems_subreddits",
+        "custom_feeds",
+    ):
+        val = raw.get(key)
+        if val is not None and not isinstance(val, list):
+            errors.append(f"Field '{key}' must be a list when provided.")
+
+    raw_feeds = raw.get("custom_feeds")
+    if isinstance(raw_feeds, list):
+        for idx, feed in enumerate(raw_feeds):
+            if not isinstance(feed, dict):
+                errors.append(f"custom_feeds[{idx}] must be an object.")
+                continue
+            fname = str(feed.get("feed_name") or "").strip()
+            if not fname:
+                errors.append(f"custom_feeds[{idx}] is missing 'feed_name'.")
+            else:
+                try:
+                    validate_feed_name(fname)
+                except ValueError as exc:
+                    errors.append(str(exc))
+
+    if errors:
+        return None, errors, warnings, None
+
+    norm = normalize_manifest(raw, ontology)
+    anchors = norm.get("anchor_subreddits") or []
+    priming = norm.get("domain_priming_subreddits") or []
+    if not anchors and not priming:
+        errors.append(
+            "Manifest must contain at least one subreddit in anchor_subreddits or domain_priming_subreddits."
+        )
+
+    anchor_low = {str(a.get("name", "")).lower() for a in anchors if isinstance(a, dict)}
+    priming_low = {str(p.get("name", "")).lower() for p in priming if isinstance(p, dict)}
+    overlap = sorted(anchor_low & priming_low)
+    if overlap:
+        warnings.append(
+            f"Subreddits appear in both anchors and priming: {', '.join(overlap)}"
+        )
+
+    audit = FeedHealthAuditor(ontology).audit_manifest(norm)
+    unrec = audit.get("unrecognized_subreddits") or []
+    if unrec:
+        warnings.append(f"Unrecognized subreddits in ontology: {', '.join(unrec[:10])}")
+    for rec in audit.get("recommendations") or []:
+        warnings.append(str(rec))
+
+    return norm, errors, warnings, audit
 
 
 def _generate_or_mix_manifest(
@@ -856,8 +1404,32 @@ def _generate_or_mix_manifest(
     return manifest
 
 
+def _write_manifest_file(path: Path, manifest: dict[str, Any]) -> Path:
+    out_path = Path(path).expanduser()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    logger.info("Wrote manifest to: %s", out_path)
+    return out_path
+
+
 def _dispatch(args: argparse.Namespace) -> int:
     """Dispatch CLI request according to offline-first v2.0 routing."""
+    validate_cdp_port(args.port)
+    validate_studio_port(args.studio_port)
+
+    if args.preset and args.manifest:
+        raise ValueError("Conflicting flags: cannot specify both --preset and --manifest.")
+    if args.mix and (args.preset or args.manifest):
+        raise ValueError("Conflicting flags: cannot combine --mix with --preset or --manifest.")
+
+    if args.command == "doctor":
+        report = run_doctor(cdp_port=args.port)
+        if args.agent:
+            _emit_json(report)
+        else:
+            print(format_doctor_report(report))
+        return 0
+
     if args.command in ("studio", "ui") or args.studio:
         run_studio(
             host="127.0.0.1",
@@ -867,26 +1439,31 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return 0
 
+    snapshots_dir = resolve_snapshots_dir()
+
     if args.command == "wizard":
         run_wizard(
             presets_dir=PRESETS_DIR,
             ontology_path=ONTOLOGY_PATH,
-            snapshots_dir=SNAPSHOTS_DIR,
+            snapshots_dir=snapshots_dir,
             cdp_port=args.port,
             github_token=args.github_token,
         )
         return 0
 
     if args.list_presets:
-        presets = list_presets_metadata(PRESETS_DIR)
+        presets = _filter_presets_by_query(list_presets_metadata(PRESETS_DIR), args.query)
         if args.agent:
-            _emit_json({"presets": presets, "count": len(presets)})
+            payload: dict[str, Any] = {"presets": presets, "count": len(presets)}
+            if args.query:
+                payload["query"] = args.query
+            _emit_json(payload)
         else:
             print(format_presets_table(presets))
         return 0
 
     if args.list_snapshots:
-        snaps = SnapshotManager(SNAPSHOTS_DIR).list_snapshots()
+        snaps = SnapshotManager(snapshots_dir).list_snapshots()
         if args.agent:
             _emit_json({"snapshots": snaps, "count": len(snaps)})
         else:
@@ -917,18 +1494,90 @@ def _dispatch(args: argparse.Namespace) -> int:
                 )
             return 0
 
-    ontology = (
-        OntologyRepository.load(ONTOLOGY_PATH)
-        if ONTOLOGY_PATH.is_file()
-        else OntologyRepository.load()
-    )
+    ontology = _load_ontology()
+
+    if args.preset_info:
+        mpath = resolve_manifest_path(preset_arg=args.preset_info)
+        raw = json.loads(mpath.read_text(encoding="utf-8"))
+        norm = normalize_manifest(raw, ontology)
+        audit = FeedHealthAuditor(ontology).audit_manifest(norm)
+        if args.agent:
+            _emit_json(
+                {
+                    "preset_id": args.preset_info,
+                    "manifest_path": str(mpath),
+                    "manifest": norm,
+                    "audit": audit,
+                }
+            )
+        else:
+            desc = str(norm.get("description") or "").strip()
+            print(format_manifest_summary(norm))
+            if desc:
+                print(f"  Description        : {desc}")
+            print()
+            print(format_audit_summary(audit, title=f"Preset Diet Health: {norm.get('name')}"))
+        return 0
+
+    if args.compare_presets:
+        comp = _compare_presets(args.compare_presets, ontology)
+        if args.agent:
+            _emit_json(comp)
+        else:
+            print(_format_preset_comparison(comp))
+        return 0
+
+    if args.validate:
+        mpath = resolve_manifest_path(args.manifest, args.preset)
+        try:
+            raw = json.loads(mpath.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            err_msg = f"Invalid JSON in {mpath}: {exc}"
+            if args.agent:
+                _emit_json(
+                    {
+                        "valid": False,
+                        "manifest_path": str(mpath),
+                        "errors": [err_msg],
+                        "warnings": [],
+                        "audit": None,
+                    }
+                )
+            else:
+                print(f"Validation FAILED ({mpath}):\n  * {err_msg}")
+            return 1
+
+        norm, errors, warnings, audit = _validate_manifest_payload(raw, ontology)
+        valid = len(errors) == 0
+        if args.agent:
+            _emit_json(
+                {
+                    "valid": valid,
+                    "manifest_name": norm.get("name") if isinstance(norm, dict) else None,
+                    "manifest_path": str(mpath),
+                    "errors": errors,
+                    "warnings": warnings,
+                    "audit": audit,
+                }
+            )
+        else:
+            status_label = "VALID" if valid else "INVALID"
+            print(f"Manifest Validation [{status_label}]: {mpath}")
+            for err in errors:
+                print(f"  ERROR: {err}")
+            for warn in warnings:
+                print(f"  WARN : {warn}")
+            if isinstance(audit, dict):
+                print()
+                print(format_audit_summary(audit, title=f"Diet Health: {norm.get('name') if norm else mpath.name}"))
+        return 0 if valid else 1
 
     if args.snapshot:
         session = acquire_reddit_session(args.port)
         api = RedditAPIClient(session.access_token, session.username)
         live_subs = api.fetch_all_subscriptions()
         live_feeds = api.fetch_custom_feeds()
-        snap = SnapshotManager(SNAPSHOTS_DIR).create_snapshot(
+        snap = SnapshotManager(snapshots_dir).create_snapshot(
             username=session.username,
             subscriptions=live_subs,
             custom_feeds=live_feeds,
@@ -946,7 +1595,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     if args.rollback:
         session = acquire_reddit_session(args.port)
         api = RedditAPIClient(session.access_token, session.username)
-        res = SnapshotManager(SNAPSHOTS_DIR).rollback(
+        res = SnapshotManager(snapshots_dir).rollback(
             args.rollback, api, dry_run=bool(args.dry_run)
         )
         if args.agent:
@@ -998,6 +1647,38 @@ def _dispatch(args: argparse.Namespace) -> int:
             print(format_manifest_summary(generated_manifest, saved_path=args.output))
         return 0
 
+    exported_manifest: Optional[dict[str, Any]] = None
+    if not has_generation and args.output is not None:
+        mpath = resolve_manifest_path(args.manifest, args.preset)
+        raw = json.loads(mpath.read_text(encoding="utf-8"))
+        exported_manifest = normalize_manifest(raw, ontology)
+        out_written = _write_manifest_file(args.output, exported_manifest)
+        if not needs_live_or_dry:
+            audit_report = (
+                FeedHealthAuditor(ontology).audit_manifest(exported_manifest)
+                if args.audit
+                else None
+            )
+            if args.agent:
+                out_payload = {
+                    "manifest": exported_manifest,
+                    "output_path": str(out_written),
+                }
+                if args.audit:
+                    out_payload["audit"] = audit_report
+                _emit_json(out_payload)
+            else:
+                print(format_manifest_summary(exported_manifest, saved_path=out_written))
+                if isinstance(audit_report, dict):
+                    print()
+                    print(
+                        format_audit_summary(
+                            audit_report,
+                            title=f"Manifest Diet Health Audit: {exported_manifest.get('name')}",
+                        )
+                    )
+            return 0
+
     if args.audit and not has_generation and not needs_live_or_dry:
         mpath = resolve_manifest_path(args.manifest, args.preset)
         raw = json.loads(mpath.read_text(encoding="utf-8"))
@@ -1016,7 +1697,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         preset_name=args.preset if generated_manifest is None else None,
         dry_run=args.dry_run,
         manifest=generated_manifest,
-        snapshots_dir=SNAPSHOTS_DIR,
+        snapshots_dir=snapshots_dir,
         ontology=ontology,
         prune=args.prune,
         keep=keep_set,
@@ -1028,7 +1709,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         live_subs = api.fetch_all_subscriptions()
         live_feeds = api.fetch_custom_feeds()
         sub_names = [entry.get("name", key) for key, entry in live_subs.items()]
-        diff = SnapshotManager(SNAPSHOTS_DIR).compute_diff(
+        diff = SnapshotManager(snapshots_dir).compute_diff(
             curator.manifest,
             live_subs=sub_names,
             live_feeds=live_feeds,
@@ -1089,7 +1770,12 @@ def _format_cdp_evaluator_hint(port: int) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    args = parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if len(raw_argv) == 0:
+        print(_format_quickstart_and_help())
+        return
+
+    args = parse_args(raw_argv)
 
     log_level = logging.ERROR if args.agent else logging.INFO
     logging.basicConfig(

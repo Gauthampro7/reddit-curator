@@ -47,7 +47,20 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Launch the Local Web Studio (Recommended)
+### 2. Inspect Environment & Safe Quickstart
+
+Running `python3 reddit_curator.py` with **zero arguments** safely prints a Quickstart guide and grouped `--help` without mutating your Reddit account or requiring CDP. Run `doctor` anytime to check Python/dependencies, ontology & presets, detected RPM/Flatpak browsers, CDP port reachability, Reddit auth, and PDF extractors:
+
+```bash
+# Safe zero-arg Quickstart + grouped help
+python3 reddit_curator.py
+
+# Environment & CDP/auth diagnostics (human or JSON)
+python3 reddit_curator.py doctor
+python3 reddit_curator.py doctor --port 9222 --agent
+```
+
+### 3. Launch the Local Web Studio (Recommended)
 
 Start the browser-based curation dashboard, **Easy Mode** 3-step setup (default) or **Advanced Mode** 5-tab lab, **Open Custom JSON** manifest importer, **About & Philosophy** explorer, diet health charts, and sync console:
 
@@ -59,7 +72,7 @@ python3 reddit_curator.py --studio
 
 Open `http://127.0.0.1:8420` (opens automatically unless `--no-open-browser` is passed). In **Easy Mode**, pick one of the 17 topic packs (or click **Open Custom JSON**), inspect the 3-pillar breakdown, and either run an offline **Preview Dry-Run** or connect your browser to apply changes. Toggle **Advanced** in the top bar for multi-source auto-curation (workspace, GitHub, resume PDF), BM25F/PPR explainability, convex preset mixing, entropy audits, and snapshot rollback.
 
-### 3. Launch a CDP-Enabled Browser (Fedora / Linux RPM & Flatpak)
+### 4. Launch a CDP-Enabled Browser (Fedora / Linux RPM & Flatpak)
 
 Auto-detect and launch Chrome, Chromium, or Brave (including Flatpak `com.brave.Browser` / `com.google.Chrome`) with isolated remote debugging on port `9222`:
 
@@ -69,11 +82,20 @@ python3 reddit_curator.py --launch-browser
 
 Log in to Reddit in that browser window once.
 
-### 4. Apply a Curated Preset or Generate One Automatically
+### 5. Apply a Curated Preset or Generate One Automatically
 
 ```bash
-# List all 17 built-in domain presets
+# List all 17 built-in domain presets (or filter with --query)
 python3 reddit_curator.py --list-presets
+python3 reddit_curator.py --list-presets --query rust
+
+# Inspect a preset, compare two presets side-by-side, or validate a manifest
+python3 reddit_curator.py --preset-info systems_engineering
+python3 reddit_curator.py --compare-presets systems_engineering,rust_and_compilers
+python3 reddit_curator.py --preset systems_engineering --validate
+
+# Export normalized preset JSON without syncing
+python3 reddit_curator.py --preset systems_engineering --output out.json
 
 # Preview a preset diff without mutating your account (works offline too)
 python3 reddit_curator.py --preset systems_engineering --dry-run
@@ -96,7 +118,7 @@ python3 reddit_curator.py --mix systems_engineering:0.6,rust_and_compilers:0.4 -
 python3 reddit_curator.py wizard
 ```
 
-### 5. Audit, Diff, Snapshot & Rollback
+### 6. Audit, Diff, Snapshot & Rollback
 
 ```bash
 # Audit live Reddit subscriptions against the Golden Ratio
@@ -148,7 +170,8 @@ Every preset in [`presets/`](presets/) is validated against [`manifest.example.j
 
 | Command | Description |
 | :--- | :--- |
-| `sync` *(default)* | Standard CLI execution mode (preserved when invoking flags directly, e.g., `--preset ... --one-shot`). |
+| `sync` *(default)* | Standard CLI execution mode when flags are provided (bare zero-arg `reddit_curator.py` prints Quickstart + help safely). |
+| `doctor` | Run read-only environment, browser, CDP, Reddit auth, and PDF extractor diagnostics. |
 | `studio` / `ui` | Start the local Web Studio HTTP server (`127.0.0.1:8420`). |
 | `wizard` | Launch the interactive guided terminal curation wizard. |
 
@@ -159,7 +182,11 @@ Every preset in [`presets/`](presets/) is validated against [`manifest.example.j
 | `--port` | `int` | `9222` | Chrome DevTools Protocol remote debugging port. |
 | `--manifest` | `Path` | — | Path to a custom v1/v2 manifest JSON file. |
 | `--preset` | `str` | — | Load a built-in preset by name from `presets/`. |
-| `--list-presets` | `bool` | `false` | Print all available presets and exit. |
+| `--list-presets` | `bool` | `false` | Print all available presets (optionally filtered by `--query`) and exit. |
+| `--preset-info` | `str` | — | Display full subreddits, custom feeds, and Diet Health audit for a preset. |
+| `--compare-presets` | `str` | — | Compare two comma-separated presets (`A,B`) side-by-side. |
+| `--validate` | `bool` | `false` | Validate `--manifest` or `--preset` schema and Diet Health. |
+| `--version` | `bool` | — | Show package version and exit. |
 | `--one-shot` | `bool` | `false` | Execute full snapshot, subscription sync, custom feed upsert, and Following lock. |
 | `--agent` | `bool` | `false` | Suppress logs and emit structured JSON to `stdout`. |
 | `--dry-run` | `bool` | `false` | Preview mutations without modifying Reddit (supports offline dry-run if CDP is closed). |

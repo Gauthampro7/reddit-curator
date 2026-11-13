@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import time
 from typing import Any
 
@@ -44,6 +45,35 @@ def _probe_cdp_ready(cdp_http_url: str, timeout: float = 1.0) -> bool:
     except (requests.RequestException, ValueError):
         return False
     return False
+
+
+def _read_bounded_stderr(stderr_file: Any, max_bytes: int = 2048) -> str:
+    """Read up to max_bytes of startup stderr from a temporary file safely."""
+    try:
+        stderr_file.seek(0)
+        raw = stderr_file.read(max_bytes)
+        if isinstance(raw, bytes):
+            return raw.decode("utf-8", errors="replace").strip()
+        if isinstance(raw, str):
+            return raw.strip()
+    except OSError:
+        return ""
+    return ""
+
+
+def _terminate_proc(proc: Any) -> None:
+    """Terminate a spawned browser process cleanly after startup timeout."""
+    try:
+        proc.terminate()
+        proc.wait(timeout=2.0)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+            proc.wait(timeout=1.0)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 class BrowserLauncher:
@@ -186,34 +216,42 @@ class BrowserLauncher:
         selected = cls._select_browser(browsers, preferred)
         command = cls.build_launch_command(selected, port, resolved_dir, headless=headless)
 
-        proc = subprocess.Popen(
-            command,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        with tempfile.TemporaryFile(mode="w+b") as stderr_file:
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_file,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
 
-        deadline = time.monotonic() + max(0.5, float(wait_timeout))
-        while time.monotonic() < deadline:
-            if _probe_cdp_ready(cdp_http_url, timeout=0.5):
-                return {
-                    "launched": True,
-                    "reused_existing": False,
-                    "browser_id": selected["browser_id"],
-                    "command": command,
-                    "pid": proc.pid,
-                    "port": port,
-                    "cdp_http_url": cdp_http_url,
-                    "user_data_dir": str(resolved_dir),
-                }
-            exit_code = proc.poll()
-            if exit_code is not None:
-                raise RuntimeError(
-                    f"Browser {selected['browser_id']} exited with code {exit_code} before CDP became ready."
-                )
-            time.sleep(0.25)
+            deadline = time.monotonic() + max(0.5, float(wait_timeout))
+            while time.monotonic() < deadline:
+                if _probe_cdp_ready(cdp_http_url, timeout=0.5):
+                    return {
+                        "launched": True,
+                        "reused_existing": False,
+                        "browser_id": selected["browser_id"],
+                        "command": command,
+                        "pid": proc.pid,
+                        "port": port,
+                        "cdp_http_url": cdp_http_url,
+                        "user_data_dir": str(resolved_dir),
+                    }
+                exit_code = proc.poll()
+                if exit_code is not None:
+                    stderr_snippet = _read_bounded_stderr(stderr_file)
+                    detail = f": {stderr_snippet}" if stderr_snippet else "."
+                    raise RuntimeError(
+                        f"Browser {selected['browser_id']} exited with code {exit_code} "
+                        f"before CDP became ready{detail}"
+                    )
+                time.sleep(0.25)
 
-        raise TimeoutError(
-            f"Browser {selected['browser_id']} did not expose CDP on {cdp_http_url} within {wait_timeout}s."
-        )
+            _terminate_proc(proc)
+            stderr_snippet = _read_bounded_stderr(stderr_file)
+            detail = f" (stderr: {stderr_snippet})" if stderr_snippet else ""
+            raise TimeoutError(
+                f"Browser {selected['browser_id']} did not expose CDP on {cdp_http_url} "
+                f"within {wait_timeout}s{detail}."
+            )

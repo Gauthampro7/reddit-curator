@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 from typing import TYPE_CHECKING, Any
 
+from rcurator.reddit_api import _partition_feed_subreddits
+
 if TYPE_CHECKING:
     from rcurator.reddit_api import RedditAPIClient
 
@@ -37,6 +39,25 @@ def _extract_manifest_subreddits(manifest: dict[str, Any]) -> list[str]:
             seen.add(low)
             desired.append(name)
     return desired
+
+
+def _partition_feed_safe(
+    feed_name: str,
+    display_name: str,
+    subreddits: list[str],
+) -> list[tuple[str, str, list[str]]]:
+    """Partition >100-sub custom feeds, falling back gracefully on non-standard test names."""
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for sub in subreddits:
+        clean = str(sub).strip()
+        if clean and clean.lower() not in seen:
+            seen.add(clean.lower())
+            deduped.append(clean)
+    try:
+        return _partition_feed_subreddits(feed_name, display_name, deduped)
+    except ValueError:
+        return [(feed_name, display_name or feed_name, deduped)]
 
 
 def _normalize_subscription_list(subscriptions: list[str] | dict[str, Any]) -> list[str]:
@@ -233,46 +254,55 @@ class SnapshotManager:
                 else:
                     unmanaged_kept.append(orig)
 
-        live_feeds_map = {
-            str(f["feed_name"]): f
-            for f in live_feeds
-            if isinstance(f, dict) and f.get("feed_name")
-        }
+        live_feeds_map: dict[str, dict[str, Any]] = {}
+        for f in live_feeds:
+            if isinstance(f, dict) and f.get("feed_name"):
+                fname = str(f["feed_name"]).strip()
+                if fname and fname.lower() not in live_feeds_map:
+                    live_feeds_map[fname.lower()] = f
 
         custom_feeds_diff: dict[str, dict[str, Any]] = {}
+        managed_feed_names_lower: set[str] = set()
         for desired_feed in manifest.get("custom_feeds", []):
             if not isinstance(desired_feed, dict) or not desired_feed.get("feed_name"):
                 continue
-            feed_name = str(desired_feed["feed_name"])
-            raw_subs = desired_feed.get("subreddits", [])
-            final_subs: list[str] = []
-            seen_f: set[str] = set()
-            for sub in raw_subs:
-                clean = str(sub).strip()
-                if clean and clean.lower() not in seen_f:
-                    seen_f.add(clean.lower())
-                    final_subs.append(clean)
+            feed_name = str(desired_feed["feed_name"]).strip()
+            display_name = str(desired_feed.get("display_name") or feed_name)
+            raw_subs = [str(s) for s in desired_feed.get("subreddits", [])]
 
-            if feed_name not in live_feeds_map:
-                custom_feeds_diff[feed_name] = {
-                    "action": "create",
-                    "added_subreddits": final_subs,
-                    "removed_subreddits": [],
-                    "final_subreddits": final_subs,
-                }
-            else:
-                existing_subs = [str(s) for s in live_feeds_map[feed_name].get("subreddits", [])]
-                existing_low = {s.lower(): s for s in existing_subs}
-                desired_low = {s.lower(): s for s in final_subs}
-                added = [s for k, s in desired_low.items() if k not in existing_low]
-                removed = [s for k, s in existing_low.items() if k not in desired_low]
-                action = "unchanged" if (not added and not removed) else "update"
-                custom_feeds_diff[feed_name] = {
-                    "action": action,
-                    "added_subreddits": added,
-                    "removed_subreddits": removed,
-                    "final_subreddits": final_subs,
-                }
+            for chunk_name, _chunk_display, final_subs in _partition_feed_safe(
+                feed_name, display_name, raw_subs
+            ):
+                managed_feed_names_lower.add(chunk_name.lower())
+                live_match = live_feeds_map.get(chunk_name.lower())
+                if live_match is None:
+                    custom_feeds_diff[chunk_name] = {
+                        "action": "create",
+                        "added_subreddits": final_subs,
+                        "removed_subreddits": [],
+                        "final_subreddits": final_subs,
+                    }
+                else:
+                    existing_subs = [str(s) for s in live_match.get("subreddits", [])]
+                    existing_low = {s.lower(): s for s in existing_subs}
+                    desired_low = {s.lower(): s for s in final_subs}
+                    added = [s for k, s in desired_low.items() if k not in existing_low]
+                    removed = [s for k, s in existing_low.items() if k not in desired_low]
+                    action = "unchanged" if (not added and not removed) else "update"
+                    custom_feeds_diff[chunk_name] = {
+                        "action": action,
+                        "added_subreddits": added,
+                        "removed_subreddits": removed,
+                        "final_subreddits": final_subs,
+                    }
+
+        unmanaged_custom_feeds: list[str] = [
+            str(f["feed_name"]).strip()
+            for f in live_feeds
+            if isinstance(f, dict)
+            and f.get("feed_name")
+            and str(f["feed_name"]).strip().lower() not in managed_feed_names_lower
+        ]
 
         has_changes = bool(
             to_subscribe
@@ -285,6 +315,7 @@ class SnapshotManager:
             "to_unsubscribe": to_unsubscribe,
             "unmanaged_kept": unmanaged_kept,
             "custom_feeds": custom_feeds_diff,
+            "unmanaged_custom_feeds": unmanaged_custom_feeds,
             "has_changes": has_changes,
         }
 
@@ -293,10 +324,24 @@ class SnapshotManager:
         snapshot_id: str,
         api_client: RedditAPIClient,
         dry_run: bool = False,
+        allow_account_mismatch: bool = False,
     ) -> dict[str, Any]:
         """Restore subscriptions and custom feeds to the exact state stored in snapshot_id."""
         snapshot = self.load_snapshot(snapshot_id)
         resolved_id = str(snapshot["snapshot_id"])
+        snap_user = str(snapshot.get("username") or "").strip()
+        api_user = str(getattr(api_client, "username", "") or "").strip()
+        if (
+            not allow_account_mismatch
+            and snap_user
+            and api_user
+            and snap_user.lower() != api_user.lower()
+        ):
+            raise ValueError(
+                f"Account mismatch: snapshot {resolved_id!r} belongs to u/{snap_user}, "
+                f"but active session is u/{api_user}. Pass allow_account_mismatch=True to override."
+            )
+
         target_subs = [str(s) for s in snapshot.get("subscriptions", [])]
         target_feeds = [f for f in snapshot.get("custom_feeds", []) if isinstance(f, dict)]
 
@@ -304,12 +349,21 @@ class SnapshotManager:
         sub_sync = api_client.sync_subscriptions(desired=target_subs, dry_run=dry_run, prune=True)
         restored_feeds = api_client.sync_custom_feeds(target_feeds, dry_run=dry_run) if target_feeds else {}
 
-        target_feed_names = {str(f.get("feed_name") or "") for f in target_feeds}
+        target_feed_names_lower: set[str] = {k.lower() for k in restored_feeds.keys()}
+        for f in target_feeds:
+            fname = str(f.get("feed_name") or "").strip()
+            if not fname:
+                continue
+            dname = str(f.get("display_name") or fname)
+            fsubs = [str(s) for s in f.get("subreddits", [])]
+            for chunk_name, _, _ in _partition_feed_safe(fname, dname, fsubs):
+                target_feed_names_lower.add(chunk_name.lower())
+
         deleted_feeds: list[str] = []
-        delete_failed = False
+        failed_deletions: list[str] = []
         for live_feed in live_feeds:
-            feed_name = str(live_feed.get("feed_name") or "")
-            if not feed_name or feed_name in target_feed_names:
+            feed_name = str(live_feed.get("feed_name") or "").strip()
+            if not feed_name or feed_name.lower() in target_feed_names_lower:
                 continue
             if dry_run:
                 deleted_feeds.append(feed_name)
@@ -318,17 +372,24 @@ class SnapshotManager:
                 if api_client.delete_custom_feed(target_ref, dry_run=False):
                     deleted_feeds.append(feed_name)
                 else:
-                    delete_failed = True
+                    failed_deletions.append(feed_name)
 
-        feeds_ok = all(item.get("status") != "failed" for item in restored_feeds.values())
-        subs_ok = len(sub_sync.get("failed", [])) == 0
+        failed_subs = list(sub_sync.get("failed", []))
+        failed_feeds = {
+            k: v for k, v in restored_feeds.items() if isinstance(v, dict) and v.get("status") == "failed"
+        }
+        feeds_ok = len(failed_feeds) == 0
+        subs_ok = len(failed_subs) == 0
         return {
             "snapshot_id": resolved_id,
-            "username": str(snapshot.get("username") or api_client.username),
+            "username": snap_user or api_user,
             "dry_run": dry_run,
             "restored_subscriptions": list(sub_sync["subscribed"]),
             "removed_subscriptions": list(sub_sync["unsubscribed"]),
             "restored_custom_feeds": restored_feeds,
             "deleted_custom_feeds": deleted_feeds,
-            "success": bool(subs_ok and feeds_ok and not delete_failed),
+            "failed_subscriptions": failed_subs,
+            "failed_custom_feeds": failed_feeds,
+            "failed_deletions": failed_deletions,
+            "success": bool(subs_ok and feeds_ok and not failed_deletions),
         }

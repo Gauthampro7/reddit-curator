@@ -12,6 +12,8 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import requests
+from websockets.exceptions import ConnectionClosed, WebSocketException
+from websockets.frames import Close
 
 import rcurator
 from rcurator.browser import BrowserLauncher
@@ -340,6 +342,166 @@ class TestCDPClient(unittest.TestCase):
         self.assertEqual(result["method_used"], "shadow_dom_#feed-tab-2")
         self.assertIsInstance(result["elapsed_ms"], int)
 
+    def test_expired_localstorage_falls_back_to_token_v2_cookie(self) -> None:
+        seen_tokens: list[str] = []
+
+        def fake_get(url: str, headers=None, timeout=None):
+            if url.endswith("/json/list"):
+                return _mock_response(
+                    200,
+                    [
+                        {
+                            "id": "RED1",
+                            "type": "page",
+                            "url": "https://www.reddit.com/",
+                            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/RED1",
+                        }
+                    ],
+                )
+            if "oauth.reddit.com/api/v1/me" in url:
+                auth_header = headers["Authorization"]
+                seen_tokens.append(auth_header)
+                if auth_header == "Bearer expired-ls-tok":
+                    return _mock_response(401, {"message": "Unauthorized"})
+                if auth_header == "Bearer fresh-cookie-v2":
+                    return _mock_response(200, {"name": "CookieFallbackUser"})
+            raise AssertionError(f"Unexpected GET {url}")
+
+        def ws_handler(req: dict) -> list[dict]:
+            cid = req["id"]
+            if req["method"] == "Page.reload":
+                raise AssertionError("Should not reload when token_v2 cookie already validates")
+            if req["method"] == "Runtime.evaluate":
+                return [{"id": cid, "result": {"result": {"value": "expired-ls-tok"}}}]
+            if req["method"] == "Network.getCookies":
+                return [
+                    {
+                        "id": cid,
+                        "result": {
+                            "cookies": [
+                                {"name": "token_v2", "domain": ".reddit.com", "value": "fresh-cookie-v2"}
+                            ]
+                        },
+                    }
+                ]
+            return [{"id": cid, "result": {}}]
+
+        with (
+            patch("rcurator.cdp_client.requests.get", side_effect=fake_get),
+            patch(
+                "rcurator.cdp_client.websockets.connect",
+                side_effect=lambda *a, **kw: AsyncMock(return_value=_FakeWebSocket(ws_handler))(),
+            ),
+        ):
+            session = acquire_reddit_session(cdp_port=9222)
+
+        self.assertEqual(session.username, "CookieFallbackUser")
+        self.assertEqual(session.access_token, "fresh-cookie-v2")
+        self.assertEqual(seen_tokens, ["Bearer expired-ls-tok", "Bearer fresh-cookie-v2"])
+
+    def test_validate_reddit_token_network_error_vs_401(self) -> None:
+        from rcurator.cdp_client import _validate_reddit_token
+
+        with patch("rcurator.cdp_client.requests.get", return_value=_mock_response(401, {"error": "invalid"})):
+            self.assertIsNone(_validate_reddit_token("bad-tok"))
+        with patch("rcurator.cdp_client.requests.get", return_value=_mock_response(403, {"error": "forbidden"})):
+            self.assertIsNone(_validate_reddit_token("bad-tok"))
+        with patch(
+            "rcurator.cdp_client.requests.get",
+            side_effect=requests.ConnectionError("DNS unreachable"),
+        ):
+            with self.assertRaises(CDPError) as ctx:
+                _validate_reddit_token("some-tok")
+            self.assertIn("oauth.reddit.com", str(ctx.exception))
+
+    def test_websocket_exception_and_malformed_json_wrapped_in_cdp_error(self) -> None:
+        async def run_connect_fail() -> None:
+            with patch(
+                "rcurator.cdp_client.websockets.connect",
+                side_effect=WebSocketException("handshake refused"),
+            ):
+                async with CDPClient("ws://127.0.0.1:9222/devtools/page/1"):
+                    pass
+
+        with self.assertRaises(CDPError):
+            asyncio.run(run_connect_fail())
+
+        class _BrokenWS:
+            def __init__(self, mode: str) -> None:
+                self.mode = mode
+
+            async def send(self, raw: str) -> None:
+                if self.mode == "send_closed":
+                    raise ConnectionClosed(Close(1006, "dropped"), None)
+
+            async def recv(self) -> str:
+                if self.mode == "bad_json":
+                    return "{not-valid-json"
+                raise ConnectionClosed(Close(1006, "dropped"), None)
+
+            async def close(self) -> None:
+                return None
+
+        for mode in ("send_closed", "bad_json"):
+            async def run_send_fail(m: str = mode) -> None:
+                with patch(
+                    "rcurator.cdp_client.websockets.connect",
+                    new=AsyncMock(return_value=_BrokenWS(m)),
+                ):
+                    async with CDPClient("ws://127.0.0.1:9222/devtools/page/1") as client:
+                        await client.send("Runtime.evaluate", {"expression": "1"})
+
+            with self.assertRaises(CDPError):
+                asyncio.run(run_send_fail())
+
+        with patch(
+            "rcurator.cdp_client.websockets.connect",
+            new=AsyncMock(return_value=_BrokenWS("send_closed")),
+        ):
+            res = activate_following_feed("ws://127.0.0.1:9222/devtools/page/1")
+            self.assertFalse(res["success"])
+            self.assertEqual(res["method_used"], "error")
+
+    def test_activate_following_feed_polls_shreddit_hydration(self) -> None:
+        walker_calls = {"n": 0}
+
+        def ws_handler(req: dict) -> list[dict]:
+            cid = req["id"]
+            method = req["method"]
+            if method == "Page.navigate":
+                return [{"id": cid, "result": {"frameId": "F1"}}]
+            if method == "Runtime.evaluate":
+                if req["params"]["expression"] == "document.readyState":
+                    return [{"id": cid, "result": {"result": {"value": "complete"}}}]
+                walker_calls["n"] += 1
+                if walker_calls["n"] < 3:
+                    return [{"id": cid, "result": {"result": {"value": {"matched": False, "method": "not_found"}}}}]
+                return [
+                    {
+                        "id": cid,
+                        "result": {
+                            "result": {
+                                "value": {"matched": True, "method": "shadow_dom_#feed-tab-2"}
+                            }
+                        },
+                    }
+                ]
+            return [{"id": cid, "result": {}}]
+
+        async def fast_sleep(_d: float) -> None:
+            return None
+
+        fake_ws = _FakeWebSocket(ws_handler)
+        with (
+            patch("rcurator.cdp_client.websockets.connect", new=AsyncMock(return_value=fake_ws)),
+            patch("rcurator.cdp_client.asyncio.sleep", side_effect=fast_sleep),
+        ):
+            res = activate_following_feed("ws://127.0.0.1:9222/devtools/page/REDDIT1")
+
+        self.assertTrue(res["success"])
+        self.assertEqual(walker_calls["n"], 3)
+        self.assertEqual(res["method_used"], "shadow_dom_#feed-tab-2")
+
 
 class TestRedditAPIClient(unittest.TestCase):
     def test_pagination_over_250_subs_and_raw_json(self) -> None:
@@ -516,6 +678,47 @@ class TestRedditAPIClient(unittest.TestCase):
         self.assertIsNone(dry["systems_core"]["http_code"])
         self.assertEqual(session.request.call_count, 1)
 
+    def test_sync_custom_feeds_skips_post_on_400_401_403_and_invalid_feed_name(self) -> None:
+        for code in (400, 401, 403):
+            session = MagicMock(spec=requests.Session)
+            session.headers = {}
+            methods: list[str] = []
+
+            def fake_req(method, url, params=None, data=None, timeout=None, c=code):
+                methods.append(method)
+                return _mock_response(c, {"error": f"http_{c}"}, text=f"client error {c}")
+
+            session.request.side_effect = fake_req
+            client = RedditAPIClient("tok123", "Tester", max_retries=0, session=session)
+            res = client.sync_custom_feeds(
+                [
+                    {"feed_name": "Bad-Name!", "subreddits": ["rust"]},
+                    {"feed_name": "valid_feed", "subreddits": ["linux"]},
+                ]
+            )
+            self.assertEqual(res["Bad-Name!"]["status"], "failed")
+            self.assertIn("Invalid custom feed name", res["Bad-Name!"]["error"])
+            self.assertEqual(res["valid_feed"]["status"], "failed")
+            self.assertEqual(res["valid_feed"]["http_code"], code)
+            self.assertEqual(methods, ["PUT"])
+
+    def test_proactive_ratelimit_logs_sleep(self) -> None:
+        session = MagicMock(spec=requests.Session)
+        session.headers = {}
+        session.request.return_value = _mock_response(
+            200,
+            {"data": {"children": []}},
+            headers={"x-ratelimit-remaining": "1.0", "x-ratelimit-reset": "3.0"},
+        )
+        client = RedditAPIClient("tok123", "Tester", session=session)
+        with (
+            patch("rcurator.reddit_api.time.sleep") as mock_sleep,
+            self.assertLogs("rcurator.reddit_api", level="INFO") as logs,
+        ):
+            client.search_subreddits("rust")
+        mock_sleep.assert_called_once_with(3.0)
+        self.assertTrue(any("proactive rate-limit" in line.lower() for line in logs.output))
+
 
 class TestBrowserLauncher(unittest.TestCase):
     def test_detect_and_flatpak_command_with_wayland(self) -> None:
@@ -598,6 +801,40 @@ class TestBrowserLauncher(unittest.TestCase):
             self.assertEqual(res["browser_id"], "existing")
             self.assertEqual(res["command"], [])
             mock_popen.assert_not_called()
+
+    def test_immediate_exit_captures_bounded_stderr_and_timeout_terminates(self) -> None:
+        browsers = [{"browser_id": "chromium", "kind": "native", "executable": "/usr/bin/chromium", "name": "Chromium"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = Path(tmp) / "prof"
+
+            def fake_popen_crash(cmd, stdout=None, stderr=None, stdin=None, start_new_session=None):
+                stderr.write(b"FATAL:zygote_host_impl_linux.cc: sandbox error\n")
+                stderr.flush()
+                proc = MagicMock()
+                proc.poll.return_value = 1
+                return proc
+
+            with (
+                patch.object(BrowserLauncher, "detect_browsers", return_value=browsers),
+                patch("rcurator.browser._probe_cdp_ready", return_value=False),
+                patch("rcurator.browser.subprocess.Popen", side_effect=fake_popen_crash),
+            ):
+                with self.assertRaises(RuntimeError) as ctx:
+                    BrowserLauncher.launch(port=9222, user_data_dir=profile, wait_timeout=1.0)
+                self.assertIn("sandbox error", str(ctx.exception))
+
+            mock_proc = MagicMock()
+            mock_proc.poll.return_value = None
+            with (
+                patch.object(BrowserLauncher, "detect_browsers", return_value=browsers),
+                patch("rcurator.browser._probe_cdp_ready", return_value=False),
+                patch("rcurator.browser.subprocess.Popen", return_value=mock_proc),
+                patch("rcurator.browser.time.sleep"),
+            ):
+                with self.assertRaises(TimeoutError):
+                    BrowserLauncher.launch(port=9222, user_data_dir=profile, wait_timeout=0.5)
+            mock_proc.terminate.assert_called_once()
+            mock_proc.wait.assert_called_once()
 
 
 class TestSnapshotManager(unittest.TestCase):
@@ -695,6 +932,70 @@ class TestSnapshotManager(unittest.TestCase):
             self.assertTrue(rb_dry["dry_run"])
             self.assertEqual(rb_dry["deleted_custom_feeds"], ["extra_feed"])
             mock_api.delete_custom_feed.assert_not_called()
+
+    def test_rollback_cross_account_guard_and_partitioned_case_insensitive_feeds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = SnapshotManager(Path(tmp) / "snaps")
+            subs_125 = [f"sub_{i}" for i in range(125)]
+            mgr.create_snapshot(
+                "Alice",
+                ["linux"],
+                [{"feed_name": "big_feed", "display_name": "Big Feed", "subreddits": subs_125}],
+                {"name": "Snap"},
+            )
+
+            other_api = MagicMock()
+            other_api.username = "Bob"
+            with self.assertRaises(ValueError) as ctx:
+                mgr.rollback("latest", other_api)
+            self.assertIn("Account mismatch", str(ctx.exception))
+            other_api.sync_subscriptions.assert_not_called()
+
+            # Case-insensitive matching + >100-sub _2 feed preservation + unmanaged_custom_feeds
+            manifest = {
+                "name": "Target",
+                "anchor_subreddits": [{"name": "linux"}],
+                "domain_priming_subreddits": [],
+                "custom_feeds": [{"feed_name": "big_feed", "subreddits": subs_125}],
+            }
+            diff = mgr.compute_diff(
+                manifest,
+                live_subs=["linux"],
+                live_feeds=[
+                    {"feed_name": "BIG_FEED", "subreddits": subs_125[:100]},
+                    {"feed_name": "big_feed_2", "subreddits": subs_125[100:]},
+                    {"feed_name": "side_feed", "subreddits": ["golang"]},
+                ],
+            )
+            self.assertEqual(diff["custom_feeds"]["big_feed"]["action"], "unchanged")
+            self.assertEqual(diff["custom_feeds"]["big_feed_2"]["action"], "unchanged")
+            self.assertEqual(diff["unmanaged_custom_feeds"], ["side_feed"])
+
+            alice_api = MagicMock()
+            alice_api.username = "alice"
+            alice_api.fetch_custom_feeds.return_value = [
+                {"feed_name": "BIG_FEED", "path": "/user/alice/m/BIG_FEED"},
+                {"feed_name": "big_feed_2", "path": "/user/alice/m/big_feed_2"},
+                {"feed_name": "extra_feed", "path": "/user/alice/m/extra_feed"},
+            ]
+            alice_api.sync_subscriptions.return_value = {
+                "dry_run": False,
+                "already_subscribed": ["linux"],
+                "subscribed": [],
+                "unsubscribed": [],
+                "kept_unmanaged": [],
+                "failed": [],
+            }
+            alice_api.sync_custom_feeds.return_value = {
+                "big_feed": {"status": "success"},
+                "big_feed_2": {"status": "success"},
+            }
+            alice_api.delete_custom_feed.return_value = True
+
+            rb = mgr.rollback("latest", alice_api, dry_run=False)
+            self.assertTrue(rb["success"])
+            self.assertEqual(rb["deleted_custom_feeds"], ["extra_feed"])
+            alice_api.delete_custom_feed.assert_called_once_with("/user/alice/m/extra_feed", dry_run=False)
 
 
 if __name__ == "__main__":

@@ -569,6 +569,124 @@ class TestOfflineCLIModes(unittest.TestCase):
         self.assertEqual(code_f, 1)
         self.assertNotIn("--launch-browser", err_f)
 
+    def test_zero_arg_quickstart_prints_grouped_help_and_never_mutates(self) -> None:
+        with mock.patch("reddit_curator.acquire_reddit_session") as m_acq:
+            code, out, err = self._run_cli([])
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        m_acq.assert_not_called()
+        self.assertIn("Safe Quickstart", out)
+        self.assertIn("Target & Preset Inspection", out)
+        self.assertIn("doctor", out)
+
+    def test_doctor_human_and_agent(self) -> None:
+        closed_port = _find_closed_port()
+        with (
+            mock.patch(
+                "reddit_curator.BrowserLauncher.detect_browsers",
+                return_value=[{"browser_id": "chromium", "kind": "native", "executable": "/usr/bin/chromium", "name": "Chromium"}],
+            ),
+            mock.patch("reddit_curator.shutil.which", return_value=None),
+        ):
+            code_a, out_a, _ = self._run_cli(["doctor", "--port", str(closed_port), "--agent"])
+            self.assertEqual(code_a, 0)
+            rep = json.loads(out_a)
+            self.assertTrue(rep["ontology"]["loaded"])
+            self.assertGreater(rep["ontology"]["count"], 200)
+            self.assertEqual(rep["presets"]["count"], 17)
+            self.assertFalse(rep["cdp"]["reachable"])
+            self.assertEqual(rep["reddit_auth"]["status"], "cdp_unreachable")
+            self.assertIn("poppler-utils", " ".join(rep["hints"]))
+
+            code_h, out_h, _ = self._run_cli(["doctor", "--port", str(closed_port)])
+            self.assertEqual(code_h, 0)
+            self.assertIn("Doctor Diagnostics", out_h)
+            self.assertIn("Chromium", out_h)
+
+    def test_preset_info_compare_validate_list_query_and_version(self) -> None:
+        code_v, out_v, _ = self._run_cli(["--version"])
+        self.assertEqual(code_v, 0)
+        self.assertIn("2.0.0", out_v)
+
+        code_q, out_q, _ = self._run_cli(["--list-presets", "--query", "rust", "--agent"])
+        self.assertEqual(code_q, 0)
+        q_payload = json.loads(out_q)
+        self.assertGreaterEqual(q_payload["count"], 1)
+        self.assertTrue(any(p["id"] == "rust_and_compilers" for p in q_payload["presets"]))
+
+        code_i, out_i, _ = self._run_cli(["--preset-info", "systems_engineering", "--agent"])
+        self.assertEqual(code_i, 0)
+        i_payload = json.loads(out_i)
+        self.assertEqual(i_payload["preset_id"], "systems_engineering")
+        self.assertIn("audit", i_payload)
+        self.assertIn("anchor_subreddits", i_payload["manifest"])
+
+        code_c, out_c, _ = self._run_cli(
+            ["--compare-presets", "systems_engineering,rust_and_compilers", "--agent"]
+        )
+        self.assertEqual(code_c, 0)
+        c_payload = json.loads(out_c)
+        self.assertEqual(c_payload["preset_a"]["id"], "systems_engineering")
+        self.assertEqual(c_payload["preset_b"]["id"], "rust_and_compilers")
+        self.assertIn("shared_subreddits", c_payload)
+
+        code_c_h, out_c_h, _ = self._run_cli(
+            ["--compare-presets", "systems_engineering,rust_and_compilers"]
+        )
+        self.assertEqual(code_c_h, 0)
+        self.assertIn("Preset Comparison:", out_c_h)
+
+        code_bad_c, out_bad_c, _ = self._run_cli(["--compare-presets", "only_one", "--agent"])
+        self.assertEqual(code_bad_c, 1)
+        self.assertFalse(json.loads(out_bad_c)["success"])
+
+        code_val, out_val, _ = self._run_cli(["--preset", "systems_engineering", "--validate", "--agent"])
+        self.assertEqual(code_val, 0)
+        self.assertTrue(json.loads(out_val)["valid"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bad_manifest = Path(tmpdir) / "bad.json"
+            bad_manifest.write_text(json.dumps({"name": "Broken", "custom_feeds": [{"feed_name": "Bad Name!"}]}))
+            code_inv, out_inv, _ = self._run_cli(["--manifest", str(bad_manifest), "--validate", "--agent"])
+            self.assertEqual(code_inv, 1)
+            inv_payload = json.loads(out_inv)
+            self.assertFalse(inv_payload["valid"])
+            self.assertGreater(len(inv_payload["errors"]), 0)
+
+    def test_output_with_preset_exports_without_sync_and_rejects_conflicts_and_bad_ports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_file = Path(tmpdir) / "exported_preset.json"
+            with mock.patch("reddit_curator.acquire_reddit_session") as m_acq:
+                code, out_json, _ = self._run_cli(
+                    ["--preset", "systems_engineering", "--output", str(out_file), "--agent"]
+                )
+            self.assertEqual(code, 0)
+            m_acq.assert_not_called()
+            self.assertTrue(out_file.is_file())
+            payload = json.loads(out_json)
+            self.assertEqual(payload["output_path"], str(out_file))
+            self.assertEqual(payload["manifest"]["name"], "Systems Engineering & Infrastructure")
+
+        code_conf, out_conf, _ = self._run_cli(
+            ["--preset", "systems_engineering", "--manifest", "manifest.example.json", "--agent"]
+        )
+        self.assertEqual(code_conf, 1)
+        self.assertIn("Conflicting flags", json.loads(out_conf)["error"])
+
+        for bad_args in (
+            ["--port", "0", "--agent"],
+            ["--port", "70000", "--agent"],
+            ["--studio", "--studio-port", "65536", "--agent"],
+        ):
+            code_p, out_p, _ = self._run_cli(bad_args)
+            self.assertEqual(code_p, 1)
+            self.assertFalse(json.loads(out_p)["success"])
+
+    def test_resolve_snapshots_dir_falls_back_when_repo_root_read_only(self) -> None:
+        with mock.patch("reddit_curator.os.access", return_value=False):
+            resolved = reddit_curator.resolve_snapshots_dir()
+        self.assertEqual(resolved, Path.home() / ".config" / "reddit-curator" / "snapshots")
+
 
 class TestMockedCDPEndToEnd(unittest.TestCase):
     """End-to-end mocked CDP + Reddit OAuth tests covering sync, diff, audit-live, snapshot, rollback, verify."""
@@ -725,6 +843,45 @@ class TestMockedCDPEndToEnd(unittest.TestCase):
             m_launch.assert_called_once_with(port=9222, preferred="chromium")
             self.assertEqual(json.loads(out_json)["browser_id"], "chromium")
 
+    def test_verify_custom_feed_partitioned_extra_subs_and_reloaded_following(self) -> None:
+        subs_125 = [f"sub_{i}" for i in range(125)]
+        manifest = {
+            "name": "Partitioned",
+            "anchor_subreddits": [{"name": "linux"}],
+            "domain_priming_subreddits": [{"name": "rust"}],
+            "custom_feeds": [{"feed_name": "big_feed", "display_name": "Big", "subreddits": subs_125}],
+        }
+        session = reddit_curator.RedditSession(
+            username="tester",
+            access_token="tok",
+            target_id="tab1",
+            ws_url="ws://127.0.0.1:9222/devtools/page/tab1",
+        )
+        curator = reddit_curator.RedditCurator(manifest=manifest)
+        mock_api = mock.MagicMock()
+        mock_api.fetch_all_subscriptions.return_value = {
+            "linux": {"name": "linux"},
+            "rust": {"name": "rust"},
+        }
+        mock_api.fetch_custom_feeds.return_value = [
+            {"feed_name": "big_feed", "display_name": "Big", "path": "/user/tester/m/big_feed", "subreddits": subs_125[:100]},
+            {"feed_name": "big_feed_2", "display_name": "Big (2)", "path": "/user/tester/m/big_feed_2", "subreddits": subs_125[100:] + ["StaleExtraSub"]},
+        ]
+        with mock.patch.object(curator, "_get_api_client", return_value=mock_api):
+            ver_feeds = curator.verify_custom_feed(session)
+            self.assertTrue(ver_feeds["big_feed"]["is_complete"])
+            self.assertFalse(ver_feeds["big_feed_2"]["is_complete"])
+            self.assertEqual(ver_feeds["big_feed_2"]["extra_subreddits"], ["StaleExtraSub"])
+
+            # Fix stale extra sub, then verify reloaded_following=False marks all_healthy=False
+            mock_api.fetch_custom_feeds.return_value[1]["subreddits"] = subs_125[100:]
+            ver_all_bad_tab = curator.verify_all(session, reloaded_following=False)
+            self.assertFalse(ver_all_bad_tab["all_healthy"])
+            self.assertFalse(ver_all_bad_tab["reloaded_following"])
+
+            ver_all_ok = curator.verify_all(session, reloaded_following=True)
+            self.assertTrue(ver_all_ok["all_healthy"])
+
 
 class TestInteractiveWizard(unittest.TestCase):
     """Deterministic walkthrough tests for rcurator.cli_wizard."""
@@ -856,6 +1013,193 @@ class TestInteractiveWizard(unittest.TestCase):
         with mock.patch("reddit_curator.RedditAPIClient", side_effect=state.make_api_client):
             primed = curator.subscribe_priming_subreddits(session)
         self.assertEqual(primed, curator.get_priming_subreddits())
+
+    def test_wizard_numbered_table_filter_numeric_mixer_retries_overwrite_and_live_fallback(self) -> None:
+        from rcurator.cdp_client import CDPError
+        from rcurator.cli_wizard import format_presets_table
+
+        table = format_presets_table([{"id": "systems_engineering", "anchor_count": 5, "domain_priming_count": 4, "custom_feeds_count": 1, "name": "Systems"}])
+        self.assertIn("#", table)
+        self.assertIn("1  systems_engineering", table)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            existing_out = tmp / "existing.json"
+            existing_out.write_text('{"old": true}\n', encoding="utf-8")
+            final_out = tmp / "final.json"
+
+            # Mode 1: ?rust filter, numeric selection '1', decline overwrite, save new path, live sync CDPError -> dry-run fallback
+            answers = iter(
+                [
+                    "1",
+                    "40,35,25",
+                    "?rust",
+                    "1",
+                    str(existing_out),
+                    "n",
+                    str(final_out),
+                    "2",   # Live sync
+                    "1",   # Fallback to offline dry-run
+                ]
+            )
+            stream = io.StringIO()
+
+            def flaky_sync(manifest, dry_run, port):
+                if not dry_run:
+                    raise CDPError("CDP port closed")
+                return {"mode": "offline_dry_run", "dry_run": True, "manifest_name": manifest.get("name"), "desired_anchors": [], "desired_priming": [], "custom_feeds": []}
+
+            res = run_wizard(
+                input_fn=lambda _: next(answers),
+                output_stream=stream,
+                snapshots_dir=tmp / "snaps",
+                sync_callback=flaky_sync,
+            )
+            self.assertEqual(res["action"], "dry_run")
+            self.assertEqual(json.loads(existing_out.read_text(encoding="utf-8")), {"old": True})
+            self.assertTrue(final_out.is_file())
+            self.assertIn("Offline Dry-Run Preview", stream.getvalue())
+
+            # Mode 2: invalid workspace/resume re-prompts + zero-evidence guard + Mode 3 numeric weights
+            ws_dir = tmp / "ws"
+            ws_dir.mkdir()
+            answers_m2 = iter(
+                [
+                    "2",
+                    "40,35,25",
+                    "15",
+                    str(tmp / "nonexistent_ws"),
+                    "",   # skip workspace
+                    str(tmp / "nonexistent_resume.pdf"),
+                    "",   # skip resume
+                    "",   # skip github
+                    "",   # skip query -> 0 evidences!
+                    "n",  # decline re-enter -> cold start
+                    "skip",
+                    "3",
+                ]
+            )
+            stream_m2 = io.StringIO()
+            res_m2 = run_wizard(
+                input_fn=lambda _: next(answers_m2),
+                output_stream=stream_m2,
+                snapshots_dir=tmp / "snaps",
+            )
+            self.assertEqual(res_m2["mode"], "2")
+            self.assertIn("Workspace directory not found", stream_m2.getvalue())
+            self.assertIn("Resume file not found", stream_m2.getvalue())
+            self.assertIn("No curation signals collected", stream_m2.getvalue())
+
+            # Mode 3 numeric mixer weights
+            answers_m3 = iter(["3", "40,35,25", "16", "1:0.6,2:0.4", "skip", "3"])
+            res_m3 = run_wizard(
+                input_fn=lambda _: next(answers_m3),
+                output_stream=io.StringIO(),
+                snapshots_dir=tmp / "snaps",
+            )
+            self.assertEqual(res_m3["mode"], "3")
+            self.assertIn("Mixed Diet:", res_m3["manifest"]["name"])
+
+            # Empty presets_dir guard + KeyboardInterrupt clean exit
+            empty_presets = tmp / "empty_presets"
+            empty_presets.mkdir()
+            answers_empty = iter(["1", "2"])  # selects 1 -> warned, hits KeyboardInterrupt on next? Test EOFError cleanly
+            def raise_eof(_prompt: str) -> str:
+                raise EOFError()
+
+            res_cancel = run_wizard(
+                input_fn=raise_eof,
+                output_stream=io.StringIO(),
+                presets_dir=empty_presets,
+                snapshots_dir=tmp / "snaps",
+            )
+            self.assertEqual(res_cancel["action"], "cancelled")
+
+    def test_format_run_summary_and_rollback_summary_surface_failures_and_verify_audit(self) -> None:
+        from rcurator.cli_wizard import format_rollback_summary, format_run_summary
+
+        verify_payload = {
+            "session": "u_test",
+            "verification": {
+                "subscriptions": {
+                    "total_subscribed": 5,
+                    "anchors_present": 1,
+                    "anchors_total": 2,
+                    "missing_anchors": ["unixporn"],
+                    "priming_present": 1,
+                    "priming_total": 2,
+                    "missing_priming": ["kernel"],
+                },
+                "custom_feeds": {
+                    "sys_feed": {
+                        "exists": True,
+                        "is_complete": False,
+                        "subreddits_count": 2,
+                        "expected_count": 2,
+                        "missing_subreddits": ["rust"],
+                        "extra_subreddits": ["funny"],
+                    }
+                },
+                "all_healthy": False,
+            },
+            "analytics": {
+                "subreddit_count": 4,
+                "pillar_counts": {"aesthetic_leisure": 1, "cognitive_curiosity": 1, "domain_priming": 2},
+                "total_daily_velocity": 100.0,
+                "composite_health_score": 82.5,
+                "golden_ratio_fidelity_score": 88.0,
+                "golden_ratio_tvd_drift": 0.06,
+                "shannon_domain_entropy_norm": 0.9,
+                "gini_velocity_concentration": 0.2,
+                "max_subreddit_dominance_pct": 30.0,
+                "dominant_subreddit": "linux",
+                "target_distribution_pct": {"aesthetic_leisure": 40, "cognitive_curiosity": 35, "domain_priming": 25},
+                "actual_velocity_distribution_pct": {"aesthetic_leisure": 38, "cognitive_curiosity": 35, "domain_priming": 27},
+            },
+        }
+        ver_txt = format_run_summary(verify_payload)
+        self.assertIn("Missing Anchors", ver_txt)
+        self.assertIn("r/unixporn", ver_txt)
+        self.assertIn("Missing Priming", ver_txt)
+        self.assertIn("r/kernel", ver_txt)
+        self.assertIn("sys_feed: INCOMPLETE", ver_txt)
+        self.assertIn("Diet Health", ver_txt)
+
+        sync_fail_txt = format_run_summary(
+            {
+                "username": "u_test",
+                "anchors_subscribed": [],
+                "priming_subscribed": [],
+                "subscription_sync": {"failed": [{"name": "banned_sub", "status_code": 404, "error": "Not found"}]},
+                "custom_feed": {"bad_feed": {"status": "failed", "http_code": 400, "error": "Invalid"}},
+                "reloaded_following": False,
+                "verification": {"subscriptions": {"anchors_present": 0, "anchors_total": 1, "priming_present": 0, "priming_total": 1}, "custom_feeds": {}, "all_healthy": False},
+            }
+        )
+        self.assertIn("Failed Subs (1)", sync_fail_txt)
+        self.assertIn("r/banned_sub", sync_fail_txt)
+        self.assertIn("Failed Feeds (1)", sync_fail_txt)
+        self.assertIn("bad_feed", sync_fail_txt)
+
+        rb_txt = format_rollback_summary(
+            {
+                "snapshot_id": "snap_1",
+                "username": "u_test",
+                "dry_run": False,
+                "restored_subscriptions": [],
+                "removed_subscriptions": [],
+                "deleted_custom_feeds": [],
+                "failed_subscriptions": [{"name": "subx", "status_code": 500, "error": "Server error"}],
+                "failed_custom_feeds": {"feedx": {"status": "failed", "http_code": 403, "error": "Forbidden"}},
+                "failed_deletions": ["old_feed"],
+                "success": False,
+            }
+        )
+        self.assertIn("Failed Subs (1)", rb_txt)
+        self.assertIn("r/subx", rb_txt)
+        self.assertIn("Failed Feeds (1)", rb_txt)
+        self.assertIn("feedx", rb_txt)
+        self.assertIn("Failed Deletions", rb_txt)
 
 
 if __name__ == "__main__":

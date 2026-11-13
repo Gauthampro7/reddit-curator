@@ -32,9 +32,12 @@ flowchart TD
 ```text
 curator/
 ├── reddit_curator.py                 # Backward-compatible CLI entrypoint & offline/online orchestrator
+├── LICENSE                           # MIT License
+├── pyproject.toml                    # PEP 621 packaging + rcurator.studio static package-data
 ├── manifest.example.json             # Canonical v1 declarative manifest template
 ├── curator_data/
-│   └── subreddit_ontology.json       # 292 vetted subreddits, 17 domains, 1,415 graph edges
+│   ├── subreddit_ontology.json       # 292 vetted subreddits, 17 domains, 1,415 graph edges
+│   └── philosophy.json               # Reverse Passive Marketing thesis, global stats & 17 verified sources
 ├── presets/                          # 17 domain presets (100% manifest.example.json compatible)
 │   ├── systems_engineering.json
 │   ├── machine_learning.json
@@ -146,13 +149,13 @@ sequenceDiagram
 
 * **Session & Rate-Limit Backoff:** Uses `requests.Session` with `HTTPAdapter(pool_connections=10, pool_maxsize=10)`, appends `raw_json=1` on all requests, proactively throttles when `x-ratelimit-remaining < 2.0` using `x-ratelimit-reset`, and retries `429`/`500`/`502`/`503`/`504` up to $4$ times with jittered exponential backoff $\min(30, 1.0 \cdot 2^k) \cdot U(0.5, 1.0)$ honoring `Retry-After`.
 * **Complete Cursor Pagination:** `fetch_all_subscriptions()` loops `GET /subreddits/mine/subscriber?limit=100&raw_json=1&after=<cursor>` until `after is None`, guarded by `seen_cursors` and `max_pages=50` ($5{,}000$ subreddits). Also queries `GET /api/multi/mine?raw_json=1`.
-* **Anchor + Priming Delta Sync & Safe Pruning:** Subscribes to **both** `anchor_subreddits` and `domain_priming_subreddits`, skipping already-subscribed communities via case-insensitive set diff. Unsubscribing unmanaged subreddits is strictly opt-in (`--prune`, with `--keep <csv>` allowlist) and triggers an automatic pre-mutation snapshot.
+* **Anchor + Priming Delta Sync & Safe Pruning:** Subscribes to **both** `anchor_subreddits` and `domain_priming_subreddits`, skipping already-subscribed communities via case-insensitive set diff. Unsubscribing unmanaged subreddits is strictly opt-in (`--prune`, with `--keep <csv>` allowlist). Pre-mutation snapshots (`SnapshotManager.create_snapshot()`) are recorded automatically before **every** non-dry-run sync (`RedditCurator.run()`, `DefaultStudioBackend.sync_manifest()`, and `cli_wizard`).
 * **Custom Feed Validation & Splitting:** Validates `feed_name` against `^[a-z0-9_]{1,50}$` and automatically partitions feeds exceeding Reddit's $100$-subreddit multireddit cap into `<feed_name>`, `<feed_name>_2`, etc.
 
 ### 4.4 Fedora / Linux Multi-Browser Launcher (`rcurator/browser.py`)
 
 * Detects native RPM binaries (`google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`, `brave-browser`) and Flatpak applications via `flatpak info` (`com.google.Chrome`, `com.brave.Browser`, `org.chromium.Chromium`).
-* Launches detached processes bound to `--remote-debugging-address=127.0.0.1`, `--remote-debugging-port={port}`, `--remote-allow-origins=http://127.0.0.1:{port}`, `0700` `--user-data-dir` (`~/.config/reddit-curator/chrome-profile`), and `--ozone-platform-hint=auto` when `WAYLAND_DISPLAY` is active.
+* Launches detached processes bound to `--remote-debugging-address=127.0.0.1`, `--remote-debugging-port={port}`, `--remote-allow-origins=*` (safe because `--remote-debugging-address=127.0.0.1` binds strictly to loopback and `CDPClient` enforces loopback WebSocket URLs), `0700` `--user-data-dir` (`~/.config/reddit-curator/chrome-profile`), and `--ozone-platform-hint=auto` when `WAYLAND_DISPLAY` is active.
 * For Flatpak browsers, passes `--filesystem=<resolved_user_data_dir>:create` so the sandbox can persist session cookies cleanly.
 
 ### 4.5 Snapshot, Diff & Rollback (`rcurator/state.py`)
@@ -180,8 +183,8 @@ Served via stdlib `http.server.ThreadingHTTPServer` bound strictly to `127.0.0.1
 ### Studio REST API Surface
 
 * `GET /`, `GET /static/<asset>`
-* `GET /api/status`, `GET /api/presets`, `GET /api/presets/<name>`, `GET /api/snapshots`
-* `POST /api/generate`, `POST /api/upload-resume`, `POST /api/import-manifest`, `POST /api/mix`, `POST /api/audit`, `POST /api/diff`, `POST /api/sync`, `POST /api/rollback`, `POST /api/launch-browser`
+* `GET /api/status`, `GET /api/about` (serves `curator_data/philosophy.json` + live counts), `GET /api/presets`, `GET /api/presets/<name>`, `GET /api/snapshots`
+* `POST /api/generate`, `POST /api/upload-resume`, `POST /api/import-manifest` (validates and normalizes custom JSON preset/manifest uploads), `POST /api/mix`, `POST /api/audit`, `POST /api/diff`, `POST /api/sync` (supports offline dry-run preview when CDP is closed), `POST /api/rollback`, `POST /api/launch-browser`
 
 ---
 

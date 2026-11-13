@@ -1063,6 +1063,31 @@ def _dispatch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _is_cdp_connection_error(exc: BaseException) -> bool:
+    """Return True if an exception indicates a Chrome CDP connection or tab/session failure."""
+    if isinstance(exc, (CDPError, ConnectionError, requests.ConnectionError)):
+        return True
+    if isinstance(exc, RuntimeError):
+        msg = str(exc).lower()
+        return any(
+            kw in msg
+            for kw in ("cdp", "port", "tab", "connection refused", "/json/list", "remote debugging")
+        )
+    return False
+
+
+def _format_cdp_evaluator_hint(port: int) -> str:
+    """Build an actionable human-mode hint when Chrome CDP is unreachable."""
+    return (
+        "\nHint: Chrome DevTools Protocol (CDP) is unreachable or no logged-in Reddit tab was found.\n"
+        f"  - Launch a CDP browser and log into Reddit: python3 reddit_curator.py --launch-browser --port {port}\n"
+        "  - Or try an offline preview / audit (zero Reddit login needed):\n"
+        "      python3 reddit_curator.py --preset systems_engineering --dry-run\n"
+        "      python3 reddit_curator.py --preset systems_engineering --audit\n"
+        "      python3 reddit_curator.py studio"
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
 
@@ -1084,6 +1109,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             _emit_json({"error": str(exc), "success": False})
         else:
             logger.error("Curator execution failed: %s", exc)
+            if _is_cdp_connection_error(exc):
+                print(_format_cdp_evaluator_hint(args.port), file=sys.stderr)
         sys.exit(1)
 
 

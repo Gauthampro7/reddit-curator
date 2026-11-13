@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "name": "Machine Learning & AI Engineering",
-  "description": "Information diet focused on open-weights model inference, neural network architectures, and applied research.",
+  "description": "Information diet focused on open-weights model inference, neural network architectures, tensor compilers, and applied research.",
   "feed_mode": "following",
   "golden_ratio_distribution": {
     "aesthetic_leisure_target_pct": 40,
@@ -9,30 +9,104 @@
     "domain_priming_target_pct": 25
   },
   "anchor_subreddits": [
-    {"name": "unixporn", "category": "aesthetic_leisure", "description": "Desktop aesthetics and dev ergonomics"},
-    {"name": "linux", "category": "aesthetic_leisure", "description": "Linux operating system ecosystem"},
-    {"name": "commandline", "category": "aesthetic_leisure", "description": "Terminal and data processing utilities"},
-    {"name": "cogsci", "category": "cognitive_curiosity", "description": "Cognitive science and biological neural models"},
-    {"name": "PhilosophyofScience", "category": "cognitive_curiosity", "description": "Scientific epistemology and theory evaluation"},
-    {"name": "DepthHub", "category": "cognitive_curiosity", "description": "Curated insightful discussions"}
+    {
+      "name": "unixporn",
+      "category": "aesthetic_leisure",
+      "description": "Desktop aesthetics and dev ergonomics"
+    },
+    {
+      "name": "linux",
+      "category": "aesthetic_leisure",
+      "description": "Linux operating system ecosystem"
+    },
+    {
+      "name": "commandline",
+      "category": "aesthetic_leisure",
+      "description": "Terminal and data processing utilities"
+    },
+    {
+      "name": "dataisbeautiful",
+      "category": "aesthetic_leisure",
+      "description": "High-craft statistical visualization"
+    },
+    {
+      "name": "cogsci",
+      "category": "cognitive_curiosity",
+      "description": "Cognitive science and biological neural models"
+    },
+    {
+      "name": "PhilosophyofScience",
+      "category": "cognitive_curiosity",
+      "description": "Scientific epistemology and theory evaluation"
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated insightful discussions"
+    },
+    {
+      "name": "linguistics",
+      "category": "cognitive_curiosity",
+      "description": "Formal syntax, semantics, and language structure"
+    }
   ],
   "domain_priming_subreddits": [
-    {"name": "MachineLearning", "category": "domain_priming", "description": "Technical ML papers, architectures, and research"},
-    {"name": "LocalLLaMA", "category": "domain_priming", "description": "Quantization, local inference, and open weights"},
-    {"name": "artificial", "category": "domain_priming", "description": "AI developments and foundational implications"},
-    {"name": "Compilers", "category": "domain_priming", "description": "MLIR, LLVM, and tensor compilers"}
+    {
+      "name": "MachineLearning",
+      "category": "domain_priming",
+      "description": "Technical ML papers, architectures, and research"
+    },
+    {
+      "name": "LocalLLaMA",
+      "category": "domain_priming",
+      "description": "Quantization, local inference, and open weights"
+    },
+    {
+      "name": "artificial",
+      "category": "domain_priming",
+      "description": "AI developments and foundational implications"
+    },
+    {
+      "name": "Compilers",
+      "category": "domain_priming",
+      "description": "MLIR, LLVM, and tensor compilers"
+    },
+    {
+      "name": "deeplearning",
+      "category": "domain_priming",
+      "description": "Neural network architectures and distributed training"
+    },
+    {
+      "name": "LanguageTechnology",
+      "category": "domain_priming",
+      "description": "NLP, information retrieval, and embeddings"
+    },
+    {
+      "name": "MLOps",
+      "category": "domain_priming",
+      "description": "GPU serving, evaluations, and production ML pipelines"
+    },
+    {
+      "name": "reinforcementlearning",
+      "category": "domain_priming",
+      "description": "Policy optimization, MCTS, and sequential agents"
+    }
   ],
   "custom_feeds": [
     {
       "feed_name": "ai_research",
       "display_name": "AI & Machine Learning Research",
-      "description_md": "Technical research papers, architecture breakdowns, and local model inference.",
+      "description_md": "Technical research papers, architecture breakdowns, tensor compilers, and local inference.",
       "icon_name": "programming",
       "visibility": "private",
       "subreddits": [
         "MachineLearning",
         "LocalLLaMA",
-        "Compilers"
+        "Compilers",
+        "deeplearning",
+        "LanguageTechnology",
+        "MLOps",
+        "reinforcementlearning"
       ]
     }
   ]

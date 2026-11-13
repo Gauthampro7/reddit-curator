@@ -1,0 +1,125 @@
+{
+  "version": "1.0.0",
+  "name": "Linux Ricing, Terminal Craft & Open Source",
+  "description": "Information diet celebrating Wayland compositors, Fedora/Arch/NixOS, Neovim/Emacs, shell craft, and self-hosted sovereignty.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "unixporn",
+      "category": "aesthetic_leisure",
+      "description": "Desktop customization, Linux ricing, tiling window managers, and visual craftsmanship."
+    },
+    {
+      "name": "hyprland",
+      "category": "aesthetic_leisure",
+      "description": "Dynamic tiling Wayland compositor configuration, animations, and custom ricing."
+    },
+    {
+      "name": "MechanicalKeyboards",
+      "category": "aesthetic_leisure",
+      "description": "Custom mechanical keyboards, switch engineering, acoustic tuning, and industrial craft."
+    },
+    {
+      "name": "thinkpad",
+      "category": "aesthetic_leisure",
+      "description": "Modular ThinkPad workstations, Coreboot, Linux compatibility, and repairability."
+    },
+    {
+      "name": "AskHistorians",
+      "category": "cognitive_curiosity",
+      "description": "Strictly moderated, peer-reviewed-caliber historical Q&A grounded in primary sources."
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "Thought-provoking, non-sensational long-form articles and deep essays."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    },
+    {
+      "name": "PhilosophyofScience",
+      "category": "cognitive_curiosity",
+      "description": "Scientific methodology, epistemology, causality, and demarcation of science."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "Fedora",
+      "category": "domain_priming",
+      "description": "Modern Fedora Linux workstation engineering, immutable desktops, and Wayland tooling."
+    },
+    {
+      "name": "NixOS",
+      "category": "domain_priming",
+      "description": "Declarative, reproducible Linux system configuration via Nix expressions and flakes."
+    },
+    {
+      "name": "archlinux",
+      "category": "domain_priming",
+      "description": "Minimalist rolling-release Linux administration, AUR packaging, and Arch Wiki craft."
+    },
+    {
+      "name": "neovim",
+      "category": "domain_priming",
+      "description": "Extensible modal editing, Lua plugin architecture, Tree-sitter, and LSP workflows."
+    },
+    {
+      "name": "commandline",
+      "category": "domain_priming",
+      "description": "Terminal utilities, shell craftsmanship, and composable Unix CLI workflows."
+    },
+    {
+      "name": "linux",
+      "category": "domain_priming",
+      "description": "Linux ecosystem developments, kernel news, and power-user workflows."
+    },
+    {
+      "name": "selfhosted",
+      "category": "domain_priming",
+      "description": "Self-hosted open-source applications, reverse proxies, and sovereign personal infrastructure."
+    },
+    {
+      "name": "podman",
+      "category": "domain_priming",
+      "description": "Daemonless rootless containers, Buildah, and systemd Quadlet integration."
+    },
+    {
+      "name": "opensource",
+      "category": "domain_priming",
+      "description": "Free and open-source software governance, licensing, releases, and maintainer craft."
+    },
+    {
+      "name": "git",
+      "category": "domain_priming",
+      "description": "Git internals, interactive rebasing, bisecting, worktrees, and stacked workflows."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "linux_craft",
+      "display_name": "Linux Systems & Dotfile Craft",
+      "description_md": "Fedora, NixOS, Neovim, Wayland compositors, Podman, and CLI mastery.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "Fedora",
+        "NixOS",
+        "archlinux",
+        "neovim",
+        "commandline",
+        "linux",
+        "selfhosted",
+        "podman",
+        "opensource"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "version": "1.0.0",
+  "name": "Fullstack Web Systems & API Architecture",
+  "description": "Information diet focused on FastAPI, TypeScript, React/Next.js, PostgreSQL, Elixir/Phoenix, and resilient web services.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "unixporn",
+      "category": "aesthetic_leisure",
+      "description": "Desktop customization, Linux ricing, tiling window managers, and visual craftsmanship."
+    },
+    {
+      "name": "neovim",
+      "category": "aesthetic_leisure",
+      "description": "Extensible modal editing, Lua plugin architecture, Tree-sitter, and LSP workflows."
+    },
+    {
+      "name": "web_design",
+      "category": "aesthetic_leisure",
+      "description": "Web layout aesthetics, typography on screen, and interactive visual craft."
+    },
+    {
+      "name": "commandline",
+      "category": "aesthetic_leisure",
+      "description": "Terminal utilities, shell craftsmanship, and composable Unix CLI workflows."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "Thought-provoking, non-sensational long-form articles and deep essays."
+    },
+    {
+      "name": "BehavioralEconomics",
+      "category": "cognitive_curiosity",
+      "description": "Heuristics, bounded rationality, prospect theory, and empirical choice architecture."
+    },
+    {
+      "name": "AskHistorians",
+      "category": "cognitive_curiosity",
+      "description": "Strictly moderated, peer-reviewed-caliber historical Q&A grounded in primary sources."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "FastAPI",
+      "category": "domain_priming",
+      "description": "High-concurrency async Python APIs with FastAPI, Pydantic v2, and OpenAPI schemas."
+    },
+    {
+      "name": "Python",
+      "category": "domain_priming",
+      "description": "Python ecosystem, CPython internals, typing, asyncio, and modern uv/ruff tooling."
+    },
+    {
+      "name": "typescript",
+      "category": "domain_priming",
+      "description": "Type-safe JavaScript architecture, advanced type-level programming, and runtime schemas."
+    },
+    {
+      "name": "reactjs",
+      "category": "domain_priming",
+      "description": "React component architecture, Server Components, state management, and rendering perf."
+    },
+    {
+      "name": "nextjs",
+      "category": "domain_priming",
+      "description": "Fullstack React with Next.js App Router, SSR/ISR caching, and edge deployments."
+    },
+    {
+      "name": "PostgreSQL",
+      "category": "domain_priming",
+      "description": "Relational internals, query tuning, indexing strategies, WAL, and ACID transactions."
+    },
+    {
+      "name": "elixir",
+      "category": "domain_priming",
+      "description": "Concurrent, fault-tolerant distributed applications on the Erlang BEAM VM and Phoenix."
+    },
+    {
+      "name": "golang",
+      "category": "domain_priming",
+      "description": "Concurrent cloud-native services, CLI binaries, gRPC, and Go runtime performance."
+    },
+    {
+      "name": "htmx",
+      "category": "domain_priming",
+      "description": "Hypermedia-driven applications, HTML-over-the-wire, and low-complexity frontends."
+    },
+    {
+      "name": "softwarearchitecture",
+      "category": "domain_priming",
+      "description": "System topology, bounded contexts, distributed patterns, and architectural trade-offs."
+    },
+    {
+      "name": "AppSec",
+      "category": "domain_priming",
+      "description": "Application security, secure SDLC, SAST/DAST, OAuth hardening, and threat modeling."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "fullstack_core",
+      "display_name": "Fullstack & API Engineering",
+      "description_md": "Backend APIs, relational databases, TypeScript frontends, and web security.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "FastAPI",
+        "Python",
+        "typescript",
+        "reactjs",
+        "nextjs",
+        "PostgreSQL",
+        "elixir",
+        "golang",
+        "htmx",
+        "softwarearchitecture",
+        "AppSec"
+      ]
+    }
+  ]
+}

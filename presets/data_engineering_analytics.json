@@ -1,0 +1,125 @@
+{
+  "version": "1.0.0",
+  "name": "Data Engineering, Lakehouses & Analytics",
+  "description": "Information diet focused on DuckDB, Polars, PostgreSQL, lakehouse storage, streaming pipelines, and visual analytics.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "dataisbeautiful",
+      "category": "aesthetic_leisure",
+      "description": "High-craft statistical graphics, cartography, and quantitative visual storytelling."
+    },
+    {
+      "name": "commandline",
+      "category": "aesthetic_leisure",
+      "description": "Terminal utilities, shell craftsmanship, and composable Unix CLI workflows."
+    },
+    {
+      "name": "linux",
+      "category": "aesthetic_leisure",
+      "description": "Linux ecosystem developments, kernel news, and power-user workflows."
+    },
+    {
+      "name": "MapPorn",
+      "category": "aesthetic_leisure",
+      "description": "Cartographic craft, thematic maps, historical geography, and map projections."
+    },
+    {
+      "name": "AskEconomics",
+      "category": "cognitive_curiosity",
+      "description": "Strictly moderated economics Q&A grounded in empirical research and formal models."
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "Thought-provoking, non-sensational long-form articles and deep essays."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    },
+    {
+      "name": "BehavioralEconomics",
+      "category": "cognitive_curiosity",
+      "description": "Heuristics, bounded rationality, prospect theory, and empirical choice architecture."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "dataengineering",
+      "category": "domain_priming",
+      "description": "Data lakehouses, columnar formats, CDC streaming, orchestration, and pipeline modeling."
+    },
+    {
+      "name": "duckdb",
+      "category": "domain_priming",
+      "description": "In-process vectorized analytical SQL, Parquet/Arrow zero-copy, and lakehouse queries."
+    },
+    {
+      "name": "Polars",
+      "category": "domain_priming",
+      "description": "Blazingly fast multi-threaded DataFrame engine built in Rust on Apache Arrow."
+    },
+    {
+      "name": "PostgreSQL",
+      "category": "domain_priming",
+      "description": "Relational internals, query tuning, indexing strategies, WAL, and ACID transactions."
+    },
+    {
+      "name": "databasedevelopment",
+      "category": "domain_priming",
+      "description": "Storage engines, B-trees, LSM trees, MVCC, query planners, and database internals."
+    },
+    {
+      "name": "clickhouse",
+      "category": "domain_priming",
+      "description": "High-throughput columnar OLAP storage, MergeTree engines, and real-time aggregation."
+    },
+    {
+      "name": "dbt",
+      "category": "domain_priming",
+      "description": "Modular SQL transformations, testing, lineage, and analytics engineering with dbt."
+    },
+    {
+      "name": "apachespark",
+      "category": "domain_priming",
+      "description": "Distributed batch and streaming compute with Apache Spark, Catalyst, and Delta/Iceberg."
+    },
+    {
+      "name": "apachekafka",
+      "category": "domain_priming",
+      "description": "Distributed commit logs, KRaft consensus, CDC pipelines, and event-driven systems."
+    },
+    {
+      "name": "statistics",
+      "category": "domain_priming",
+      "description": "Statistical inference, Bayesian modeling, experimental design, and probability."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "data_lakehouse",
+      "display_name": "Data Engineering & OLAP",
+      "description_md": "Columnar engines, Arrow/Parquet, lakehouse architecture, and analytical SQL.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "dataengineering",
+        "duckdb",
+        "Polars",
+        "PostgreSQL",
+        "databasedevelopment",
+        "clickhouse",
+        "dbt",
+        "apachespark",
+        "apachekafka"
+      ]
+    }
+  ]
+}

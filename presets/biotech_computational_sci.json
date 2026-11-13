@@ -1,0 +1,124 @@
+{
+  "version": "1.0.0",
+  "name": "Biotech, Bioinformatics & Computational Science",
+  "description": "Information diet focused on genomics pipelines, computational biology, protein modeling, scientific computing, and chemistry.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "dataisbeautiful",
+      "category": "aesthetic_leisure",
+      "description": "High-craft statistical graphics, cartography, and quantitative visual storytelling."
+    },
+    {
+      "name": "linux",
+      "category": "aesthetic_leisure",
+      "description": "Linux ecosystem developments, kernel news, and power-user workflows."
+    },
+    {
+      "name": "commandline",
+      "category": "aesthetic_leisure",
+      "description": "Terminal utilities, shell craftsmanship, and composable Unix CLI workflows."
+    },
+    {
+      "name": "FountainPens",
+      "category": "aesthetic_leisure",
+      "description": "Tactile analog writing instruments, nib engineering, and ink craftsmanship."
+    },
+    {
+      "name": "AskScience",
+      "category": "cognitive_curiosity",
+      "description": "Expert-moderated empirical Q&A across physics, biology, chemistry, and earth sciences."
+    },
+    {
+      "name": "biology",
+      "category": "cognitive_curiosity",
+      "description": "Molecular, cellular, and evolutionary biology research and literature."
+    },
+    {
+      "name": "chemistry",
+      "category": "cognitive_curiosity",
+      "description": "Molecular synthesis, physical chemistry, catalysis, and analytical instrumentation."
+    },
+    {
+      "name": "PhilosophyofScience",
+      "category": "cognitive_curiosity",
+      "description": "Scientific methodology, epistemology, causality, and demarcation of science."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "bioinformatics",
+      "category": "domain_priming",
+      "description": "Genomic pipelines, single-cell transcriptomics, Nextflow/Snakemake, and protein folding."
+    },
+    {
+      "name": "computationalbiology",
+      "category": "domain_priming",
+      "description": "Mathematical modeling of biological systems, molecular dynamics, and ML protein design."
+    },
+    {
+      "name": "genomics",
+      "category": "domain_priming",
+      "description": "Whole-genome sequencing, GWAS, long-read assembly, and functional genomics."
+    },
+    {
+      "name": "computationalchemistry",
+      "category": "domain_priming",
+      "description": "Density functional theory, molecular dynamics simulations, and cheminformatics."
+    },
+    {
+      "name": "biotech",
+      "category": "domain_priming",
+      "description": "Biopharmaceutical R&D, drug discovery pipelines, clinical trial design, and assays."
+    },
+    {
+      "name": "scientificcomputing",
+      "category": "domain_priming",
+      "description": "Numerical PDEs, HPC/MPI clusters, Julia/SciPy solvers, and scientific simulation."
+    },
+    {
+      "name": "neuroscience",
+      "category": "domain_priming",
+      "description": "Neural circuits, synaptic plasticity, neuroimaging, and computational neuroscience."
+    },
+    {
+      "name": "Julia",
+      "category": "domain_priming",
+      "description": "High-performance scientific computing, multiple dispatch, and SciML differential solvers."
+    },
+    {
+      "name": "rstats",
+      "category": "domain_priming",
+      "description": "Statistical computing in R, Tidyverse data pipelines, ggplot2, and Quarto reports."
+    },
+    {
+      "name": "chempros",
+      "category": "domain_priming",
+      "description": "Professional synthetic, analytical, and medicinal chemistry discussion."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "comp_bio_sci",
+      "display_name": "Bioinformatics & Computational Science",
+      "description_md": "Genomics, molecular dynamics, Nextflow/Snakemake, and scientific computing.",
+      "icon_name": "science",
+      "visibility": "private",
+      "subreddits": [
+        "bioinformatics",
+        "computationalbiology",
+        "genomics",
+        "computationalchemistry",
+        "biotech",
+        "scientificcomputing",
+        "Julia",
+        "rstats"
+      ]
+    }
+  ]
+}

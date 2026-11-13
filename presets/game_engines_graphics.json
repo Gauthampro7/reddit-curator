@@ -1,0 +1,125 @@
+{
+  "version": "1.0.0",
+  "name": "Game Engines, Real-Time Graphics & Shaders",
+  "description": "Information diet focused on Vulkan, path tracing, compute shaders, C++/Rust ECS engines, and procedural worlds.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "PixelArt",
+      "category": "aesthetic_leisure",
+      "description": "Pixel-level craftsmanship, color palettes, dithering, and sprite animation."
+    },
+    {
+      "name": "blender",
+      "category": "aesthetic_leisure",
+      "description": "3D modeling, Geometry Nodes, physically based rendering, and procedural shaders."
+    },
+    {
+      "name": "generative",
+      "category": "aesthetic_leisure",
+      "description": "Algorithmic visual art, pen-plotter geometry, and deterministic noise systems."
+    },
+    {
+      "name": "proceduralgeneration",
+      "category": "aesthetic_leisure",
+      "description": "Procedural worlds, Wave Function Collapse, noise synthesis, and algorithmic geometry."
+    },
+    {
+      "name": "math",
+      "category": "cognitive_curiosity",
+      "description": "Pure and applied mathematics: algebra, topology, analysis, and proof theory."
+    },
+    {
+      "name": "Physics",
+      "category": "cognitive_curiosity",
+      "description": "Theoretical and experimental physics, condensed matter, and mathematical physics."
+    },
+    {
+      "name": "cogsci",
+      "category": "cognitive_curiosity",
+      "description": "Interdisciplinary cognitive science, mental representation, and computational mind models."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "GraphicsProgramming",
+      "category": "domain_priming",
+      "description": "Real-time rendering architectures, path tracing, BVHs, PBR, and GPU pipelines."
+    },
+    {
+      "name": "vulkan",
+      "category": "domain_priming",
+      "description": "Explicit low-overhead Vulkan API, SPIR-V shaders, barriers, and bindless rendering."
+    },
+    {
+      "name": "shaders",
+      "category": "domain_priming",
+      "description": "Fragment, vertex, and compute shaders, raymarching SDFs, and Shadertoy craft."
+    },
+    {
+      "name": "raytracing",
+      "category": "domain_priming",
+      "description": "Physically based path tracing, Monte Carlo integration, ReSTIR, and BVH acceleration."
+    },
+    {
+      "name": "opengl",
+      "category": "domain_priming",
+      "description": "OpenGL rendering pipelines, direct state access, shadow mapping, and GLSL."
+    },
+    {
+      "name": "webgl",
+      "category": "domain_priming",
+      "description": "Browser GPU rendering with WebGL2 and WebGPU, instancing, and WGSL compute."
+    },
+    {
+      "name": "bevy",
+      "category": "domain_priming",
+      "description": "Data-driven Entity Component System (ECS) game engine in Rust with wgpu."
+    },
+    {
+      "name": "godot",
+      "category": "domain_priming",
+      "description": "Open-source Godot 4 engine, GDScript, GDExtension native modules, and 2D/3D craft."
+    },
+    {
+      "name": "gamedev",
+      "category": "domain_priming",
+      "description": "Game engine architecture, ECS, deterministic netcode, physics, and production craft."
+    },
+    {
+      "name": "cpp",
+      "category": "domain_priming",
+      "description": "Modern C++ standards, zero-overhead abstractions, template metaprogramming, and ABI."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "graphics_engines",
+      "display_name": "Graphics & Engine Architecture",
+      "description_md": "Vulkan, physically based rendering, ray tracing, shaders, and Bevy/Godot.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "GraphicsProgramming",
+        "vulkan",
+        "shaders",
+        "raytracing",
+        "opengl",
+        "webgl",
+        "bevy",
+        "godot",
+        "cpp"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "version": "1.0.0",
+  "name": "Distributed Systems & Cloud-Native Infrastructure",
+  "description": "Information diet focused on Kubernetes, Podman, Terraform/OpenTofu, SRE, OpenTelemetry, and resilient infrastructure.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "homelab",
+      "category": "aesthetic_leisure",
+      "description": "Home data centers, virtualization clusters, ZFS storage arrays, and enterprise networking."
+    },
+    {
+      "name": "selfhosted",
+      "category": "aesthetic_leisure",
+      "description": "Self-hosted open-source applications, reverse proxies, and sovereign personal infrastructure."
+    },
+    {
+      "name": "Fedora",
+      "category": "aesthetic_leisure",
+      "description": "Modern Fedora Linux workstation engineering, immutable desktops, and Wayland tooling."
+    },
+    {
+      "name": "NixOS",
+      "category": "aesthetic_leisure",
+      "description": "Declarative, reproducible Linux system configuration via Nix expressions and flakes."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "Thought-provoking, non-sensational long-form articles and deep essays."
+    },
+    {
+      "name": "AskHistorians",
+      "category": "cognitive_curiosity",
+      "description": "Strictly moderated, peer-reviewed-caliber historical Q&A grounded in primary sources."
+    },
+    {
+      "name": "CredibleDefense",
+      "category": "cognitive_curiosity",
+      "description": "Technical defense logistics, aerospace engineering, and strategic deterrence analysis."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "kubernetes",
+      "category": "domain_priming",
+      "description": "Container orchestration, custom operators, GitOps, CNI networking, and cluster scaling."
+    },
+    {
+      "name": "podman",
+      "category": "domain_priming",
+      "description": "Daemonless rootless containers, Buildah, and systemd Quadlet integration."
+    },
+    {
+      "name": "docker",
+      "category": "domain_priming",
+      "description": "OCI container packaging, BuildKit caching, multi-stage builds, and Compose stacks."
+    },
+    {
+      "name": "sre",
+      "category": "domain_priming",
+      "description": "Site reliability engineering, error budgets, observability, and incident architecture."
+    },
+    {
+      "name": "devops",
+      "category": "domain_priming",
+      "description": "CI/CD automation, platform engineering, IaC pipelines, and release reliability."
+    },
+    {
+      "name": "terraform",
+      "category": "domain_priming",
+      "description": "Declarative Infrastructure as Code with Terraform and OpenTofu."
+    },
+    {
+      "name": "ansible",
+      "category": "domain_priming",
+      "description": "Agentless configuration management, idempotent playbooks, and fleet automation."
+    },
+    {
+      "name": "PrometheusMonitoring",
+      "category": "domain_priming",
+      "description": "Metric collection, PromQL queries, Alertmanager routing, and Prometheus scaling."
+    },
+    {
+      "name": "opentelemetry",
+      "category": "domain_priming",
+      "description": "Vendor-neutral telemetry collection, distributed tracing, and OpenTelemetry SDKs."
+    },
+    {
+      "name": "golang",
+      "category": "domain_priming",
+      "description": "Concurrent cloud-native services, CLI binaries, gRPC, and Go runtime performance."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "cloud_native_ops",
+      "display_name": "Cloud-Native & SRE",
+      "description_md": "Kubernetes, containers, IaC, reliability engineering, and OpenTelemetry.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "kubernetes",
+        "podman",
+        "sre",
+        "devops",
+        "terraform",
+        "ansible",
+        "PrometheusMonitoring",
+        "opentelemetry",
+        "golang"
+      ]
+    }
+  ]
+}

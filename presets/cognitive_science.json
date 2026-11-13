@@ -9,25 +9,84 @@
     "domain_priming_target_pct": 25
   },
   "anchor_subreddits": [
-    {"name": "unixporn", "category": "aesthetic_leisure", "description": "Visual craftsmanship and design flow"},
-    {"name": "linux", "category": "aesthetic_leisure", "description": "Open source computing environment"},
-    {"name": "AskHistorians", "category": "cognitive_curiosity", "description": "Peer-reviewed quality historiography"},
-    {"name": "AskScience", "category": "cognitive_curiosity", "description": "Empirical scientific Q&A"},
-    {"name": "TrueReddit", "category": "cognitive_curiosity", "description": "In-depth, non-sensational long reads"}
+    {
+      "name": "unixporn",
+      "category": "aesthetic_leisure",
+      "description": "Visual craftsmanship and design flow"
+    },
+    {
+      "name": "linux",
+      "category": "aesthetic_leisure",
+      "description": "Open source computing environment"
+    },
+    {
+      "name": "typography",
+      "category": "aesthetic_leisure",
+      "description": "Typographic clarity and reading ergonomics"
+    },
+    {
+      "name": "AskHistorians",
+      "category": "cognitive_curiosity",
+      "description": "Peer-reviewed quality historiography"
+    },
+    {
+      "name": "AskScience",
+      "category": "cognitive_curiosity",
+      "description": "Empirical scientific Q&A"
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "In-depth, non-sensational long reads"
+    }
   ],
   "domain_priming_subreddits": [
-    {"name": "socialpsychology", "category": "domain_priming", "description": "Academic social psychology and peer dynamics"},
-    {"name": "cogsci", "category": "domain_priming", "description": "Cognitive science and mental representation"},
-    {"name": "BehavioralEconomics", "category": "domain_priming", "description": "Choice architecture, biases, and game theory"},
-    {"name": "rational", "category": "domain_priming", "description": "Rationalist discourse and heuristic modeling"},
-    {"name": "PhilosophyofScience", "category": "domain_priming", "description": "Scientific epistemology and falsification"},
-    {"name": "AskEconomics", "category": "domain_priming", "description": "Formal micro and macro-economic models"}
+    {
+      "name": "socialpsychology",
+      "category": "domain_priming",
+      "description": "Academic social psychology and peer dynamics"
+    },
+    {
+      "name": "cogsci",
+      "category": "domain_priming",
+      "description": "Cognitive science and mental representation"
+    },
+    {
+      "name": "BehavioralEconomics",
+      "category": "domain_priming",
+      "description": "Choice architecture, biases, and game theory"
+    },
+    {
+      "name": "rational",
+      "category": "domain_priming",
+      "description": "Rationalist discourse and heuristic modeling"
+    },
+    {
+      "name": "PhilosophyofScience",
+      "category": "domain_priming",
+      "description": "Scientific epistemology and falsification"
+    },
+    {
+      "name": "AskEconomics",
+      "category": "domain_priming",
+      "description": "Formal micro and macro-economic models"
+    },
+    {
+      "name": "neuroscience",
+      "category": "domain_priming",
+      "description": "Neural circuits, neuroimaging, and computational mind"
+    },
+    {
+      "name": "AcademicPsychology",
+      "category": "domain_priming",
+      "description": "Experimental design, psychometrics, and replicability"
+    }
   ],
   "custom_feeds": [
     {
       "feed_name": "cog_science",
       "display_name": "Cognitive Science & Rationality",
-      "description_md": "Academic social psychology, behavioral economics, and decision theory.",
+      "description_md": "Academic social psychology, behavioral economics, neuroscience, and decision theory.",
       "icon_name": "science",
       "visibility": "private",
       "subreddits": [
@@ -36,7 +95,9 @@
         "BehavioralEconomics",
         "rational",
         "PhilosophyofScience",
-        "AskEconomics"
+        "AskEconomics",
+        "neuroscience",
+        "AcademicPsychology"
       ]
     }
   ]

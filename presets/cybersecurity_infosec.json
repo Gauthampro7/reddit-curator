@@ -1,0 +1,124 @@
+{
+  "version": "1.0.0",
+  "name": "Cybersecurity, Reverse Engineering & InfoSec",
+  "description": "Information diet focused on exploit research, binary reverse engineering, detection engineering, AppSec, and cryptography.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "linux",
+      "category": "aesthetic_leisure",
+      "description": "Linux ecosystem developments, kernel news, and power-user workflows."
+    },
+    {
+      "name": "commandline",
+      "category": "aesthetic_leisure",
+      "description": "Terminal utilities, shell craftsmanship, and composable Unix CLI workflows."
+    },
+    {
+      "name": "thinkpad",
+      "category": "aesthetic_leisure",
+      "description": "Modular ThinkPad workstations, Coreboot, Linux compatibility, and repairability."
+    },
+    {
+      "name": "selfhosted",
+      "category": "aesthetic_leisure",
+      "description": "Self-hosted open-source applications, reverse proxies, and sovereign personal infrastructure."
+    },
+    {
+      "name": "AskHistorians",
+      "category": "cognitive_curiosity",
+      "description": "Strictly moderated, peer-reviewed-caliber historical Q&A grounded in primary sources."
+    },
+    {
+      "name": "CredibleDefense",
+      "category": "cognitive_curiosity",
+      "description": "Technical defense logistics, aerospace engineering, and strategic deterrence analysis."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    },
+    {
+      "name": "logic",
+      "category": "cognitive_curiosity",
+      "description": "Formal logic, proof theory, model theory, modal systems, and foundations."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "netsec",
+      "category": "domain_priming",
+      "description": "Technical information security write-ups, CVE root-cause analysis, and exploit research."
+    },
+    {
+      "name": "ReverseEngineering",
+      "category": "domain_priming",
+      "description": "Static and dynamic binary analysis, decompilers, instrumentation, and firmware RE."
+    },
+    {
+      "name": "blueteamsec",
+      "category": "domain_priming",
+      "description": "Detection engineering, Sigma rules, threat hunting, and defensive telemetry."
+    },
+    {
+      "name": "redteamsec",
+      "category": "domain_priming",
+      "description": "Adversary emulation, Active Directory attack paths, and red team tradecraft."
+    },
+    {
+      "name": "Malware",
+      "category": "domain_priming",
+      "description": "Malware reverse engineering, YARA rules, behavioral sandboxing, and threat intel."
+    },
+    {
+      "name": "AppSec",
+      "category": "domain_priming",
+      "description": "Application security, secure SDLC, SAST/DAST, OAuth hardening, and threat modeling."
+    },
+    {
+      "name": "cryptography",
+      "category": "domain_priming",
+      "description": "Applied and theoretical cryptography: ZKPs, elliptic curves, post-quantum lattices."
+    },
+    {
+      "name": "computerforensics",
+      "category": "domain_priming",
+      "description": "Digital forensics and incident response (DFIR), memory analysis, and timeline triage."
+    },
+    {
+      "name": "ebpf",
+      "category": "domain_priming",
+      "description": "In-kernel eBPF programs, XDP high-speed networking, Cilium, and dynamic tracing."
+    },
+    {
+      "name": "openbsd",
+      "category": "domain_priming",
+      "description": "Proactive security auditing, pledge/unveil sandboxing, PF firewalling, and BSD Unix."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "infosec_core",
+      "display_name": "Security Research & Reverse Engineering",
+      "description_md": "Vulnerability write-ups, Ghidra/binary RE, DFIR, and cryptography.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "netsec",
+        "ReverseEngineering",
+        "blueteamsec",
+        "redteamsec",
+        "Malware",
+        "AppSec",
+        "cryptography",
+        "computerforensics"
+      ]
+    }
+  ]
+}

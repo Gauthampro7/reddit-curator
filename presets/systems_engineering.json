@@ -9,26 +9,108 @@
     "domain_priming_target_pct": 25
   },
   "anchor_subreddits": [
-    {"name": "unixporn", "category": "aesthetic_leisure", "description": "Desktop aesthetics and tiling window managers"},
-    {"name": "Fedora", "category": "aesthetic_leisure", "description": "Modern Linux workstation engineering"},
-    {"name": "linux", "category": "aesthetic_leisure", "description": "Operating system and kernel developments"},
-    {"name": "commandline", "category": "aesthetic_leisure", "description": "CLI workflows and terminal tooling"},
-    {"name": "AskHistorians", "category": "cognitive_curiosity", "description": "High-signal analytical history"},
-    {"name": "DepthHub", "category": "cognitive_curiosity", "description": "Deep discussion highlights across topics"},
-    {"name": "TrueReddit", "category": "cognitive_curiosity", "description": "Non-sensational long-form articles"},
-    {"name": "PhilosophyofScience", "category": "cognitive_curiosity", "description": "Epistemology and scientific methodology"}
+    {
+      "name": "unixporn",
+      "category": "aesthetic_leisure",
+      "description": "Desktop aesthetics and tiling window managers"
+    },
+    {
+      "name": "Fedora",
+      "category": "aesthetic_leisure",
+      "description": "Modern Linux workstation engineering"
+    },
+    {
+      "name": "linux",
+      "category": "aesthetic_leisure",
+      "description": "Operating system and kernel developments"
+    },
+    {
+      "name": "commandline",
+      "category": "aesthetic_leisure",
+      "description": "CLI workflows and terminal tooling"
+    },
+    {
+      "name": "AskHistorians",
+      "category": "cognitive_curiosity",
+      "description": "High-signal analytical history"
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Deep discussion highlights across topics"
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "Non-sensational long-form articles"
+    },
+    {
+      "name": "PhilosophyofScience",
+      "category": "cognitive_curiosity",
+      "description": "Epistemology and scientific methodology"
+    }
   ],
   "domain_priming_subreddits": [
-    {"name": "databasedevelopment", "category": "domain_priming", "description": "Storage engines, query execution, LSM trees"},
-    {"name": "duckdb", "category": "domain_priming", "description": "In-process analytical SQL and vectorization"},
-    {"name": "podman", "category": "domain_priming", "description": "Rootless containers and OCI orchestration"},
-    {"name": "FastAPI", "category": "domain_priming", "description": "Async streaming and high-concurrency APIs"},
-    {"name": "PostgreSQL", "category": "domain_priming", "description": "Relational internals, WAL, and ACID consistency"},
-    {"name": "softwarearchitecture", "category": "domain_priming", "description": "Distributed patterns and system design"},
-    {"name": "kernel", "category": "domain_priming", "description": "Linux virtual memory, mmap, and page cache"},
-    {"name": "ExperiencedDevs", "category": "domain_priming", "description": "Staff+ engineering trade-offs and leadership"},
-    {"name": "kubernetes", "category": "domain_priming", "description": "Container topology and shared memory coordination"},
-    {"name": "dataengineering", "category": "domain_priming", "description": "Data lakehouses, columnar formats, and streaming"}
+    {
+      "name": "databasedevelopment",
+      "category": "domain_priming",
+      "description": "Storage engines, query execution, LSM trees"
+    },
+    {
+      "name": "duckdb",
+      "category": "domain_priming",
+      "description": "In-process analytical SQL and vectorization"
+    },
+    {
+      "name": "podman",
+      "category": "domain_priming",
+      "description": "Rootless containers and OCI orchestration"
+    },
+    {
+      "name": "FastAPI",
+      "category": "domain_priming",
+      "description": "Async streaming and high-concurrency APIs"
+    },
+    {
+      "name": "PostgreSQL",
+      "category": "domain_priming",
+      "description": "Relational internals, WAL, and ACID consistency"
+    },
+    {
+      "name": "softwarearchitecture",
+      "category": "domain_priming",
+      "description": "Distributed patterns and system design"
+    },
+    {
+      "name": "kernel",
+      "category": "domain_priming",
+      "description": "Linux virtual memory, mmap, and page cache"
+    },
+    {
+      "name": "ExperiencedDevs",
+      "category": "domain_priming",
+      "description": "Staff+ engineering trade-offs and leadership"
+    },
+    {
+      "name": "kubernetes",
+      "category": "domain_priming",
+      "description": "Container topology and shared memory coordination"
+    },
+    {
+      "name": "dataengineering",
+      "category": "domain_priming",
+      "description": "Data lakehouses, columnar formats, and streaming"
+    },
+    {
+      "name": "ebpf",
+      "category": "domain_priming",
+      "description": "In-kernel tracing, XDP networking, and BPF verifier"
+    },
+    {
+      "name": "systems",
+      "category": "domain_priming",
+      "description": "Concurrency, consensus, and low-level systems"
+    }
   ],
   "custom_feeds": [
     {
@@ -45,6 +127,8 @@
         "PostgreSQL",
         "softwarearchitecture",
         "kernel",
+        "ebpf",
+        "systems",
         "ExperiencedDevs",
         "kubernetes",
         "dataengineering"

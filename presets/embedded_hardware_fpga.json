@@ -1,0 +1,125 @@
+{
+  "version": "1.0.0",
+  "name": "Embedded Systems, Hardware & FPGA Design",
+  "description": "Information diet focused on bare-metal firmware, RTOS, SystemVerilog/FPGA, RISC-V, PCB layout, and robotics.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "ErgoMechKeyboards",
+      "category": "aesthetic_leisure",
+      "description": "Split ergonomic keyboards, ZMK/QMK firmware, home-row mods, and custom PCBs."
+    },
+    {
+      "name": "IndustrialDesign",
+      "category": "aesthetic_leisure",
+      "description": "Physical product form, materials, CAD surface modeling, and manufacturing craft."
+    },
+    {
+      "name": "sffpc",
+      "category": "aesthetic_leisure",
+      "description": "Small-form-factor PC engineering, thermal optimization, and dense CNC enclosures."
+    },
+    {
+      "name": "3Dprinting",
+      "category": "aesthetic_leisure",
+      "description": "Additive manufacturing, Klipper firmware, Voron kinematics, and functional CAD parts."
+    },
+    {
+      "name": "Physics",
+      "category": "cognitive_curiosity",
+      "description": "Theoretical and experimental physics, condensed matter, and mathematical physics."
+    },
+    {
+      "name": "AskScience",
+      "category": "cognitive_curiosity",
+      "description": "Expert-moderated empirical Q&A across physics, biology, chemistry, and earth sciences."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    },
+    {
+      "name": "space",
+      "category": "cognitive_curiosity",
+      "description": "Aerospace engineering, orbital mechanics, planetary exploration, and propulsion."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "embedded",
+      "category": "domain_priming",
+      "description": "Bare-metal firmware, RTOS scheduling, DMA/ISR design, and microcontroller buses."
+    },
+    {
+      "name": "FPGA",
+      "category": "domain_priming",
+      "description": "RTL design in SystemVerilog/VHDL, timing closure, open-source synthesis, and AXI."
+    },
+    {
+      "name": "RISCV",
+      "category": "domain_priming",
+      "description": "Open-standard RISC-V instruction set, extensions, silicon cores, and toolchain support."
+    },
+    {
+      "name": "chipdesign",
+      "category": "domain_priming",
+      "description": "ASIC/SoC microarchitecture, RTL verification, physical design, and open PDKs."
+    },
+    {
+      "name": "PrintedCircuitBoard",
+      "category": "domain_priming",
+      "description": "PCB schematic capture, high-speed layout, ground planes, impedance control, and DFM."
+    },
+    {
+      "name": "AskElectronics",
+      "category": "domain_priming",
+      "description": "Circuit troubleshooting, analog/power design, component selection, and schematic review."
+    },
+    {
+      "name": "C_Programming",
+      "category": "domain_priming",
+      "description": "Idiomatic ISO C, POSIX systems programming, memory layout, and static/dynamic analysis."
+    },
+    {
+      "name": "DSP",
+      "category": "domain_priming",
+      "description": "Digital signal processing, Fourier/wavelet transforms, filtering, and real-time audio/RF."
+    },
+    {
+      "name": "ControlTheory",
+      "category": "domain_priming",
+      "description": "State-space control, Kalman filtering, MPC, LQR, and nonlinear stability theory."
+    },
+    {
+      "name": "robotics",
+      "category": "domain_priming",
+      "description": "Autonomous robotics, kinematics, sensor fusion, SLAM, and sim-to-real control."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "hardware_silicon",
+      "display_name": "Embedded, RTL & PCB Engineering",
+      "description_md": "Bare-metal C/Rust firmware, SystemVerilog FPGAs, RISC-V, and PCB design.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "embedded",
+        "FPGA",
+        "RISCV",
+        "chipdesign",
+        "PrintedCircuitBoard",
+        "AskElectronics",
+        "C_Programming",
+        "DSP",
+        "ControlTheory"
+      ]
+    }
+  ]
+}

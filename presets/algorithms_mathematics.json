@@ -1,0 +1,124 @@
+{
+  "version": "1.0.0",
+  "name": "Algorithms, Theoretical CS & Mathematics",
+  "description": "Information diet focused on pure mathematics, formal logic, algorithm design, probability, and proof assistants.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "generative",
+      "category": "aesthetic_leisure",
+      "description": "Algorithmic visual art, pen-plotter geometry, and deterministic noise systems."
+    },
+    {
+      "name": "cellularautomata",
+      "category": "aesthetic_leisure",
+      "description": "Cellular automata, Lenia, Rule 110, and emergent complexity from simple rules."
+    },
+    {
+      "name": "emacs",
+      "category": "aesthetic_leisure",
+      "description": "Extensible Emacs Lisp environment, Org-mode knowledge workflows, and Magit."
+    },
+    {
+      "name": "typography",
+      "category": "aesthetic_leisure",
+      "description": "Typeface design, monospace legibility, kerning, and editorial grid typography."
+    },
+    {
+      "name": "math",
+      "category": "cognitive_curiosity",
+      "description": "Pure and applied mathematics: algebra, topology, analysis, and proof theory."
+    },
+    {
+      "name": "logic",
+      "category": "cognitive_curiosity",
+      "description": "Formal logic, proof theory, model theory, modal systems, and foundations."
+    },
+    {
+      "name": "PhilosophyofScience",
+      "category": "cognitive_curiosity",
+      "description": "Scientific methodology, epistemology, causality, and demarcation of science."
+    },
+    {
+      "name": "Physics",
+      "category": "cognitive_curiosity",
+      "description": "Theoretical and experimental physics, condensed matter, and mathematical physics."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "algorithms",
+      "category": "domain_priming",
+      "description": "Algorithm design, asymptotic analysis, graph theory, and approximation bounds."
+    },
+    {
+      "name": "compsci",
+      "category": "domain_priming",
+      "description": "Foundational computer science theory, complexity classes, and formal models."
+    },
+    {
+      "name": "competitiveprogramming",
+      "category": "domain_priming",
+      "description": "ICPC/Codeforces-level algorithmic problem solving, advanced data structures, and math."
+    },
+    {
+      "name": "statistics",
+      "category": "domain_priming",
+      "description": "Statistical inference, Bayesian modeling, experimental design, and probability."
+    },
+    {
+      "name": "probability",
+      "category": "domain_priming",
+      "description": "Measure-theoretic probability, Markov chains, stochastic calculus, and puzzles."
+    },
+    {
+      "name": "cryptography",
+      "category": "domain_priming",
+      "description": "Applied and theoretical cryptography: ZKPs, elliptic curves, post-quantum lattices."
+    },
+    {
+      "name": "PLT",
+      "category": "domain_priming",
+      "description": "Formal programming language theory, semantics, proof assistants, and POPL/PLDI papers."
+    },
+    {
+      "name": "ControlTheory",
+      "category": "domain_priming",
+      "description": "State-space control, Kalman filtering, MPC, LQR, and nonlinear stability theory."
+    },
+    {
+      "name": "QuantumComputing",
+      "category": "domain_priming",
+      "description": "Quantum algorithms, error correction, hardware modalities, and complexity theory."
+    },
+    {
+      "name": "LaTeX",
+      "category": "domain_priming",
+      "description": "Academic typesetting, TikZ vector diagrams, BibLaTeX citations, and macro craft."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "math_algo_theory",
+      "display_name": "Algorithms & Formal Mathematics",
+      "description_md": "Graph theory, complexity, formal proof systems, and statistical theory.",
+      "icon_name": "science",
+      "visibility": "private",
+      "subreddits": [
+        "algorithms",
+        "compsci",
+        "competitiveprogramming",
+        "statistics",
+        "probability",
+        "cryptography",
+        "PLT",
+        "QuantumComputing"
+      ]
+    }
+  ]
+}

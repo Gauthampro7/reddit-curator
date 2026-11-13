@@ -1,0 +1,125 @@
+{
+  "version": "1.0.0",
+  "name": "Frontend Architecture, UI Craft & Design Systems",
+  "description": "Information diet focused on TypeScript, modern CSS, React/Svelte, accessibility, typography, and design systems.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "typography",
+      "category": "aesthetic_leisure",
+      "description": "Typeface design, monospace legibility, kerning, and editorial grid typography."
+    },
+    {
+      "name": "graphic_design",
+      "category": "aesthetic_leisure",
+      "description": "Visual communication, Swiss grid systems, vector geometry, and identity craft."
+    },
+    {
+      "name": "Design",
+      "category": "aesthetic_leisure",
+      "description": "Cross-disciplinary design critique covering industrial, graphic, and digital craft."
+    },
+    {
+      "name": "web_design",
+      "category": "aesthetic_leisure",
+      "description": "Web layout aesthetics, typography on screen, and interactive visual craft."
+    },
+    {
+      "name": "cogsci",
+      "category": "cognitive_curiosity",
+      "description": "Interdisciplinary cognitive science, mental representation, and computational mind models."
+    },
+    {
+      "name": "BehavioralEconomics",
+      "category": "cognitive_curiosity",
+      "description": "Heuristics, bounded rationality, prospect theory, and empirical choice architecture."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "Thought-provoking, non-sensational long-form articles and deep essays."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "typescript",
+      "category": "domain_priming",
+      "description": "Type-safe JavaScript architecture, advanced type-level programming, and runtime schemas."
+    },
+    {
+      "name": "css",
+      "category": "domain_priming",
+      "description": "Modern CSS layout engines, container queries, cascade layers, and zero-JS animations."
+    },
+    {
+      "name": "Frontend",
+      "category": "domain_priming",
+      "description": "Browser architecture, rendering performance, Core Web Vitals, and frontend craft."
+    },
+    {
+      "name": "reactjs",
+      "category": "domain_priming",
+      "description": "React component architecture, Server Components, state management, and rendering perf."
+    },
+    {
+      "name": "sveltejs",
+      "category": "domain_priming",
+      "description": "Compiler-driven reactivity with Svelte 5 runes and SvelteKit fullstack routing."
+    },
+    {
+      "name": "DesignSystems",
+      "category": "domain_priming",
+      "description": "Design tokens, multi-brand component libraries, Figma-to-code sync, and governance."
+    },
+    {
+      "name": "a11y",
+      "category": "domain_priming",
+      "description": "Web accessibility engineering, WCAG compliance, ARIA patterns, and screen-reader UX."
+    },
+    {
+      "name": "UI_Design",
+      "category": "domain_priming",
+      "description": "Digital interface aesthetics, layout grids, dark-mode contrast, and component craft."
+    },
+    {
+      "name": "userexperience",
+      "category": "domain_priming",
+      "description": "Human-centered UX research, information architecture, and usability engineering."
+    },
+    {
+      "name": "Playwright",
+      "category": "domain_priming",
+      "description": "Deterministic cross-browser end-to-end testing, CDP automation, and trace debugging."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "ui_engineering",
+      "display_name": "Frontend & Design Systems",
+      "description_md": "TypeScript, CSS layout engines, component libraries, and web accessibility.",
+      "icon_name": "design",
+      "visibility": "private",
+      "subreddits": [
+        "typescript",
+        "css",
+        "Frontend",
+        "reactjs",
+        "sveltejs",
+        "DesignSystems",
+        "a11y",
+        "UI_Design",
+        "userexperience"
+      ]
+    }
+  ]
+}

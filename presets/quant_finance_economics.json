@@ -1,0 +1,124 @@
+{
+  "version": "1.0.0",
+  "name": "Quantitative Finance, Econometrics & Markets",
+  "description": "Information diet focused on stochastic modeling, market microstructure, causal econometrics, and fundamental valuation.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "dataisbeautiful",
+      "category": "aesthetic_leisure",
+      "description": "High-craft statistical graphics, cartography, and quantitative visual storytelling."
+    },
+    {
+      "name": "Minimal_Setups",
+      "category": "aesthetic_leisure",
+      "description": "Minimalist, distraction-free desk setups celebrating clarity and restraint."
+    },
+    {
+      "name": "FountainPens",
+      "category": "aesthetic_leisure",
+      "description": "Tactile analog writing instruments, nib engineering, and ink craftsmanship."
+    },
+    {
+      "name": "commandline",
+      "category": "aesthetic_leisure",
+      "description": "Terminal utilities, shell craftsmanship, and composable Unix CLI workflows."
+    },
+    {
+      "name": "AskEconomics",
+      "category": "cognitive_curiosity",
+      "description": "Strictly moderated economics Q&A grounded in empirical research and formal models."
+    },
+    {
+      "name": "BehavioralEconomics",
+      "category": "cognitive_curiosity",
+      "description": "Heuristics, bounded rationality, prospect theory, and empirical choice architecture."
+    },
+    {
+      "name": "AskHistorians",
+      "category": "cognitive_curiosity",
+      "description": "Strictly moderated, peer-reviewed-caliber historical Q&A grounded in primary sources."
+    },
+    {
+      "name": "geopolitics",
+      "category": "cognitive_curiosity",
+      "description": "Structural international relations, trade corridors, and strategic statecraft analysis."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "quant",
+      "category": "domain_priming",
+      "description": "Quantitative modeling, derivatives pricing, market microstructure, and quant research."
+    },
+    {
+      "name": "algotrading",
+      "category": "domain_priming",
+      "description": "Systematic strategy backtesting, order execution, overfitting control, and market data."
+    },
+    {
+      "name": "econometrics",
+      "category": "domain_priming",
+      "description": "Causal identification, panel regression, time-series modeling, and GARCH/VAR."
+    },
+    {
+      "name": "statistics",
+      "category": "domain_priming",
+      "description": "Statistical inference, Bayesian modeling, experimental design, and probability."
+    },
+    {
+      "name": "probability",
+      "category": "domain_priming",
+      "description": "Measure-theoretic probability, Markov chains, stochastic calculus, and puzzles."
+    },
+    {
+      "name": "SecurityAnalysis",
+      "category": "domain_priming",
+      "description": "Fundamental equity research, SEC filing teardowns, and discounted cash flow valuation."
+    },
+    {
+      "name": "Finance",
+      "category": "domain_priming",
+      "description": "Corporate finance, capital markets, fixed income, and macroeconomic credit cycles."
+    },
+    {
+      "name": "actuary",
+      "category": "domain_priming",
+      "description": "Actuarial modeling, risk pricing, survival analysis, and insurance reserving."
+    },
+    {
+      "name": "ocaml",
+      "category": "domain_priming",
+      "description": "Pragmatic functional ML programming, module functors, multicore OCaml, and compilers."
+    },
+    {
+      "name": "Economics",
+      "category": "domain_priming",
+      "description": "Economic research papers, macro trends, and empirical policy analysis."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "quant_research",
+      "display_name": "Quant Finance & Econometrics",
+      "description_md": "Derivatives pricing, systematic backtesting, econometrics, and risk.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "quant",
+        "algotrading",
+        "econometrics",
+        "statistics",
+        "probability",
+        "SecurityAnalysis",
+        "Finance",
+        "actuary"
+      ]
+    }
+  ]
+}

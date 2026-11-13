@@ -1,0 +1,124 @@
+{
+  "version": "1.0.0",
+  "name": "Product Craft, Engineering Leadership & Startups",
+  "description": "Information diet focused on B2B SaaS, technical leadership, product discovery, UX, and bootstrapped execution.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "Design",
+      "category": "aesthetic_leisure",
+      "description": "Cross-disciplinary design critique covering industrial, graphic, and digital craft."
+    },
+    {
+      "name": "Minimal_Setups",
+      "category": "aesthetic_leisure",
+      "description": "Minimalist, distraction-free desk setups celebrating clarity and restraint."
+    },
+    {
+      "name": "BuyItForLife",
+      "category": "aesthetic_leisure",
+      "description": "Durable, repairable, over-engineered tools and everyday objects built to last."
+    },
+    {
+      "name": "IndustrialDesign",
+      "category": "aesthetic_leisure",
+      "description": "Physical product form, materials, CAD surface modeling, and manufacturing craft."
+    },
+    {
+      "name": "BehavioralEconomics",
+      "category": "cognitive_curiosity",
+      "description": "Heuristics, bounded rationality, prospect theory, and empirical choice architecture."
+    },
+    {
+      "name": "AskEconomics",
+      "category": "cognitive_curiosity",
+      "description": "Strictly moderated economics Q&A grounded in empirical research and formal models."
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "Thought-provoking, non-sensational long-form articles and deep essays."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "SaaS",
+      "category": "domain_priming",
+      "description": "B2B SaaS growth, pricing architecture, multi-tenant engineering, and retention."
+    },
+    {
+      "name": "startups",
+      "category": "domain_priming",
+      "description": "Early-stage venture building, product-market fit, B2B distribution, and unit economics."
+    },
+    {
+      "name": "ProductManagement",
+      "category": "domain_priming",
+      "description": "Product discovery, positioning, quantitative metrics, and cross-functional strategy."
+    },
+    {
+      "name": "EngineeringManagers",
+      "category": "domain_priming",
+      "description": "Engineering management, organizational scaling, hiring loops, and delivery metrics."
+    },
+    {
+      "name": "ExperiencedDevs",
+      "category": "domain_priming",
+      "description": "Senior/Staff engineering trade-offs, system reliability, and organizational dynamics."
+    },
+    {
+      "name": "indiehackers",
+      "category": "domain_priming",
+      "description": "Bootstrapped solo founders, micro-SaaS engineering, and organic distribution."
+    },
+    {
+      "name": "CTO",
+      "category": "domain_priming",
+      "description": "Executive technology leadership, build-vs-buy economics, and R&D strategy."
+    },
+    {
+      "name": "technicalwriting",
+      "category": "domain_priming",
+      "description": "Docs-as-code, Diataxis frameworks, API reference design, and clarity in technical prose."
+    },
+    {
+      "name": "analytics",
+      "category": "domain_priming",
+      "description": "Quantitative product analytics, cohort modeling, and decision-oriented metrics."
+    },
+    {
+      "name": "userexperience",
+      "category": "domain_priming",
+      "description": "Human-centered UX research, information architecture, and usability engineering."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "product_builders",
+      "display_name": "Product, SaaS & Eng Leadership",
+      "description_md": "Engineering leadership, SaaS distribution, product discovery, and docs craft.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "SaaS",
+        "startups",
+        "ProductManagement",
+        "EngineeringManagers",
+        "ExperiencedDevs",
+        "indiehackers",
+        "CTO",
+        "technicalwriting"
+      ]
+    }
+  ]
+}

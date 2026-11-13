@@ -1,0 +1,125 @@
+{
+  "version": "1.0.0",
+  "name": "Academic Research, Epistemology & Polymath Inquiry",
+  "description": "Information diet dedicated to historiography, philosophy of science, formal logic, linguistics, and empirical synthesis.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "emacs",
+      "category": "aesthetic_leisure",
+      "description": "Extensible Emacs Lisp environment, Org-mode knowledge workflows, and Magit."
+    },
+    {
+      "name": "typography",
+      "category": "aesthetic_leisure",
+      "description": "Typeface design, monospace legibility, kerning, and editorial grid typography."
+    },
+    {
+      "name": "ArchitecturePorn",
+      "category": "aesthetic_leisure",
+      "description": "Architectural photography highlighting structural clarity, light, and spatial form."
+    },
+    {
+      "name": "FountainPens",
+      "category": "aesthetic_leisure",
+      "description": "Tactile analog writing instruments, nib engineering, and ink craftsmanship."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    },
+    {
+      "name": "TrueReddit",
+      "category": "cognitive_curiosity",
+      "description": "Thought-provoking, non-sensational long-form articles and deep essays."
+    },
+    {
+      "name": "Longreads",
+      "category": "cognitive_curiosity",
+      "description": "Carefully curated narrative non-fiction and deep investigative feature journalism."
+    },
+    {
+      "name": "Foodforthought",
+      "category": "cognitive_curiosity",
+      "description": "Intelligent, analytical long-form essays on culture, science, and institutions."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "AskHistorians",
+      "category": "domain_priming",
+      "description": "Strictly moderated, peer-reviewed-caliber historical Q&A grounded in primary sources."
+    },
+    {
+      "name": "PhilosophyofScience",
+      "category": "domain_priming",
+      "description": "Scientific methodology, epistemology, causality, and demarcation of science."
+    },
+    {
+      "name": "AskPhilosophy",
+      "category": "domain_priming",
+      "description": "Moderated academic answers on analytic and continental philosophy."
+    },
+    {
+      "name": "academicphilosophy",
+      "category": "domain_priming",
+      "description": "Scholarly philosophy papers, journal discussions, and rigorous philosophical debate."
+    },
+    {
+      "name": "epistemology",
+      "category": "domain_priming",
+      "description": "Theory of knowledge, justification, belief revision, and formal epistemology."
+    },
+    {
+      "name": "AskSocialScience",
+      "category": "domain_priming",
+      "description": "Citation-backed answers across sociology, anthropology, and political science."
+    },
+    {
+      "name": "linguistics",
+      "category": "domain_priming",
+      "description": "Formal syntax, phonology, historical linguistics, and cognitive language structure."
+    },
+    {
+      "name": "AskScience",
+      "category": "domain_priming",
+      "description": "Expert-moderated empirical Q&A across physics, biology, chemistry, and earth sciences."
+    },
+    {
+      "name": "LaTeX",
+      "category": "domain_priming",
+      "description": "Academic typesetting, TikZ vector diagrams, BibLaTeX citations, and macro craft."
+    },
+    {
+      "name": "typst",
+      "category": "domain_priming",
+      "description": "Fast, programmable modern typesetting system written in Rust as a LaTeX alternative."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "scholarly_inquiry",
+      "display_name": "Scholarly Inquiry & Epistemology",
+      "description_md": "Peer-reviewed-level history, philosophy of science, linguistics, and LaTeX/Typst.",
+      "icon_name": "science",
+      "visibility": "private",
+      "subreddits": [
+        "AskHistorians",
+        "PhilosophyofScience",
+        "AskPhilosophy",
+        "academicphilosophy",
+        "epistemology",
+        "AskSocialScience",
+        "linguistics",
+        "LaTeX",
+        "typst"
+      ]
+    }
+  ]
+}

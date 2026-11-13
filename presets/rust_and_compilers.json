@@ -1,0 +1,125 @@
+{
+  "version": "1.0.0",
+  "name": "Rust, Compilers & Programming Language Theory",
+  "description": "Information diet focused on Rust ownership systems, LLVM/MLIR compiler passes, type theory, Zig, and WebAssembly.",
+  "feed_mode": "following",
+  "golden_ratio_distribution": {
+    "aesthetic_leisure_target_pct": 40,
+    "cognitive_curiosity_target_pct": 35,
+    "domain_priming_target_pct": 25
+  },
+  "anchor_subreddits": [
+    {
+      "name": "neovim",
+      "category": "aesthetic_leisure",
+      "description": "Extensible modal editing, Lua plugin architecture, Tree-sitter, and LSP workflows."
+    },
+    {
+      "name": "NixOS",
+      "category": "aesthetic_leisure",
+      "description": "Declarative, reproducible Linux system configuration via Nix expressions and flakes."
+    },
+    {
+      "name": "unixporn",
+      "category": "aesthetic_leisure",
+      "description": "Desktop customization, Linux ricing, tiling window managers, and visual craftsmanship."
+    },
+    {
+      "name": "commandline",
+      "category": "aesthetic_leisure",
+      "description": "Terminal utilities, shell craftsmanship, and composable Unix CLI workflows."
+    },
+    {
+      "name": "logic",
+      "category": "cognitive_curiosity",
+      "description": "Formal logic, proof theory, model theory, modal systems, and foundations."
+    },
+    {
+      "name": "math",
+      "category": "cognitive_curiosity",
+      "description": "Pure and applied mathematics: algebra, topology, analysis, and proof theory."
+    },
+    {
+      "name": "PhilosophyofScience",
+      "category": "cognitive_curiosity",
+      "description": "Scientific methodology, epistemology, causality, and demarcation of science."
+    },
+    {
+      "name": "DepthHub",
+      "category": "cognitive_curiosity",
+      "description": "Curated showcase of the most thoughtful, high-effort analytical posts across Reddit."
+    }
+  ],
+  "domain_priming_subreddits": [
+    {
+      "name": "rust",
+      "category": "domain_priming",
+      "description": "Memory-safe systems programming, ownership semantics, async runtimes, and Cargo crates."
+    },
+    {
+      "name": "Compilers",
+      "category": "domain_priming",
+      "description": "Compiler construction, SSA IRs, LLVM/MLIR pipelines, register allocation, and JITs."
+    },
+    {
+      "name": "LLVM",
+      "category": "domain_priming",
+      "description": "LLVM compiler infrastructure, TableGen, IR optimization passes, and Clang internals."
+    },
+    {
+      "name": "ProgrammingLanguages",
+      "category": "domain_priming",
+      "description": "Programming language theory, type inference, algebraic effects, and runtime design."
+    },
+    {
+      "name": "PLT",
+      "category": "domain_priming",
+      "description": "Formal programming language theory, semantics, proof assistants, and POPL/PLDI papers."
+    },
+    {
+      "name": "zig",
+      "category": "domain_priming",
+      "description": "Zig systems language, comptime metaprogramming, explicit allocators, and C interop."
+    },
+    {
+      "name": "haskell",
+      "category": "domain_priming",
+      "description": "Purely functional programming, GHC type-level machinery, STM, and category theory."
+    },
+    {
+      "name": "ocaml",
+      "category": "domain_priming",
+      "description": "Pragmatic functional ML programming, module functors, multicore OCaml, and compilers."
+    },
+    {
+      "name": "WebAssembly",
+      "category": "domain_priming",
+      "description": "Portable sandboxed bytecode, WASI Component Model, and high-speed browser/edge compute."
+    },
+    {
+      "name": "functionalprogramming",
+      "category": "domain_priming",
+      "description": "Functional paradigms, immutability, algebraic structures, and compositional design."
+    }
+  ],
+  "custom_feeds": [
+    {
+      "feed_name": "rust_compilers",
+      "display_name": "Rust, Compilers & PLT",
+      "description_md": "Ownership systems, LLVM/MLIR pipelines, type systems, and functional languages.",
+      "icon_name": "programming",
+      "visibility": "private",
+      "subreddits": [
+        "rust",
+        "Compilers",
+        "LLVM",
+        "ProgrammingLanguages",
+        "PLT",
+        "zig",
+        "haskell",
+        "ocaml",
+        "WebAssembly"
+      ]
+    }
+  ]
+}

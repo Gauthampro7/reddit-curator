@@ -53,19 +53,19 @@
   </div>
 
   <nav class="tabbar adv-only" role="tablist" aria-label="Studio Views">
-    <button class="tab-btn active" role="tab" aria-selected="true" data-tab="lab">
+    <button id="tab-lab" class="tab-btn active" role="tab" aria-selected="true" aria-controls="view-lab" data-tab="lab">
       <span class="tab-key">1</span> Auto-Curate Lab
     </button>
-    <button class="tab-btn" role="tab" aria-selected="false" data-tab="inspector">
+    <button id="tab-inspector" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-inspector" data-tab="inspector">
       <span class="tab-key">2</span> Explainability &amp; Graph
     </button>
-    <button class="tab-btn" role="tab" aria-selected="false" data-tab="gallery">
+    <button id="tab-gallery" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-gallery" data-tab="gallery">
       <span class="tab-key">3</span> 17-Preset Gallery &amp; Mixer
     </button>
-    <button class="tab-btn" role="tab" aria-selected="false" data-tab="analytics">
+    <button id="tab-analytics" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-analytics" data-tab="analytics">
       <span class="tab-key">4</span> Diet Health &amp; Entropy
     </button>
-    <button class="tab-btn" role="tab" aria-selected="false" data-tab="console">
+    <button id="tab-console" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-console" data-tab="console">
       <span class="tab-key">5</span> Sync, Browser &amp; Rollback
     </button>
   </nav>
@@ -80,7 +80,7 @@
         <button id="easy-btn-about" type="button" class="btn btn-ghost btn-sm">Why this works &rarr;</button>
       </div>
 
-      <article class="panel easy-step">
+      <article id="easy-step-1" class="panel easy-step">
         <div class="panel-head">
           <div class="easy-step-title">
             <span class="easy-step-num">1</span>
@@ -89,11 +89,14 @@
           <div class="action-row-tight">
             <span id="easy-selected-badge" class="badge badge-accent">No preset selected</span>
             <button id="easy-btn-import-json" type="button" class="btn btn-secondary btn-sm">Open Custom JSON</button>
+            <button id="easy-btn-export-json" type="button" class="btn btn-ghost btn-sm" disabled>Export JSON</button>
+            <button id="easy-btn-copy-json" type="button" class="btn btn-ghost btn-sm" disabled>Copy JSON</button>
           </div>
         </div>
-        <p class="panel-desc">Pick a ready-made topic pack below, or open your own custom JSON file.</p>
+        <p class="panel-desc">Pick a ready-made topic pack below, or drop/open your own custom <code>.json</code> manifest file.</p>
         <div class="toolbar">
           <input id="easy-preset-search" class="input input-sm" type="search" placeholder="Search topic packs...">
+          <div id="easy-category-chips" class="chip-row chip-row-inline" role="group" aria-label="Filter topic packs by category"></div>
         </div>
         <div id="easy-preset-grid" class="easy-preset-grid"></div>
         <div id="easy-preset-preview" class="easy-preview hidden" aria-live="polite"></div>
@@ -109,6 +112,7 @@
             <span id="easy-browser-badge" class="status-pill status-off">Not connected</span>
           </div>
           <p id="easy-browser-status" class="panel-desc">Launch the browser window, log in to your Reddit account once, then click Check Connection.</p>
+          <div id="easy-connection-checklist" class="checklist-grid" aria-live="polite"></div>
           <div class="action-row">
             <button id="easy-btn-launch" type="button" class="btn btn-primary">Open Reddit Browser</button>
             <button id="easy-btn-check" type="button" class="btn btn-secondary">Check Connection</button>
@@ -133,7 +137,7 @@
     </section>
 
     <!-- VIEW 1: AUTO-CURATE LAB -->
-    <section id="view-lab" class="view active" role="tabpanel" aria-label="Auto-Curate Lab">
+    <section id="view-lab" class="view active" role="tabpanel" aria-labelledby="tab-lab" aria-label="Auto-Curate Lab">
       <div class="grid-2">
         <article class="panel">
           <div class="panel-head">
@@ -143,7 +147,10 @@
           <p class="panel-desc">Fuse technical signals from your local resume, source workspace, GitHub profile, and explicit keywords into a velocity-balanced Golden Ratio diet.</p>
 
           <div class="field-group">
-            <label class="field-label" for="resume-file-input">Resume / CV Parser (In-Memory Only, &le; 15 MB)</label>
+            <div class="field-label-row">
+              <label class="field-label" for="resume-file-input">Resume / CV Parser (In-Memory Only, &le; 15 MB)</label>
+              <button id="btn-clear-resume" type="button" class="btn btn-ghost btn-xs hidden">Clear Resume</button>
+            </div>
             <div id="resume-dropzone" class="dropzone" tabindex="0">
               <input id="resume-file-input" type="file" accept=".pdf,.txt,.md,.tex" hidden>
               <div class="dropzone-title">Drop PDF / TXT / MD / TEX here or click to browse</div>
@@ -240,13 +247,36 @@
     </section>
 
     <!-- VIEW 2: EXPLAINABILITY & KNOWLEDGE GRAPH INSPECTOR -->
-    <section id="view-inspector" class="view" role="tabpanel" aria-label="Explainability and Knowledge Graph Inspector">
+    <section id="view-inspector" class="view" role="tabpanel" aria-labelledby="tab-inspector" aria-label="Explainability and Knowledge Graph Inspector" hidden>
       <article class="panel">
         <div class="panel-head">
           <h2>Explainability &amp; Knowledge Graph Inspector</h2>
-          <div id="inspector-algo-badge" class="badge">Awaiting manifest</div>
+          <div class="action-row-tight">
+            <button id="btn-inspector-reset" type="button" class="btn btn-ghost btn-sm hidden">Reset to Original Preset</button>
+            <div id="inspector-algo-badge" class="badge">Awaiting manifest</div>
+          </div>
         </div>
         <div id="inspector-top-terms" class="chip-row"></div>
+
+        <div id="inspector-editor-bar" class="inspector-editor-bar hidden">
+          <div class="inspector-editor-row">
+            <input id="inspector-add-sub" class="input input-sm" type="text" placeholder="Add r/subreddit (e.g. zig)">
+            <select id="inspector-add-pillar" class="input input-sm" aria-label="Pillar for new subreddit">
+              <option value="domain_priming">Domain Priming</option>
+              <option value="cognitive_curiosity">Cognitive Curiosity</option>
+              <option value="aesthetic_leisure">Aesthetic Leisure</option>
+            </select>
+            <select id="inspector-add-tier" class="input input-sm" aria-label="Target tier for new subreddit">
+              <option value="tier1">Tier-1 Following</option>
+            </select>
+            <button id="btn-inspector-add-sub" type="button" class="btn btn-secondary btn-sm">+ Add Subreddit</button>
+          </div>
+          <div class="inspector-editor-row">
+            <input id="inspector-new-feed-name" class="input input-sm" type="text" placeholder="New Custom Feed name (e.g. systems_deep)">
+            <button id="btn-inspector-add-feed" type="button" class="btn btn-ghost btn-sm">+ New Custom Feed</button>
+            <div id="inspector-feeds-list" class="chip-row chip-row-inline"></div>
+          </div>
+        </div>
 
         <div class="toolbar">
           <input id="inspector-search" class="input input-sm" type="search" placeholder="Filter by subreddit, term, or bridge...">
@@ -268,20 +298,21 @@
     </section>
 
     <!-- VIEW 3: 17-PRESET GALLERY & CONVEX MIXER -->
-    <section id="view-gallery" class="view" role="tabpanel" aria-label="Preset Gallery and Convex Mixer">
+    <section id="view-gallery" class="view" role="tabpanel" aria-labelledby="tab-gallery" aria-label="Preset Gallery and Convex Mixer" hidden>
       <div class="grid-gallery">
         <article class="panel">
           <div class="panel-head">
             <h2>17 Domain Presets</h2>
             <input id="gallery-search" class="input input-sm" type="search" placeholder="Search presets...">
           </div>
-          <div id="preset-gallery-grid" class="preset-grid"></div>
+          <div id="gallery-category-chips" class="chip-row" role="group" aria-label="Filter gallery presets by category"></div>
+          <div id="preset-gallery-grid" class="preset-grid mt-sm"></div>
         </article>
 
         <article class="panel">
           <div class="panel-head">
             <h2>Convex Preset Mixer</h2>
-            <span class="badge badge-dom">Simplex Blend</span>
+            <span id="mixer-target-badge" class="badge badge-dom">Target 40/35/25</span>
           </div>
           <p class="panel-desc">Select presets from the gallery (or add below) to blend multiple domain diets with convex weights and re-optimize via Golden Ratio velocity balancing.</p>
 
@@ -301,11 +332,12 @@
     </section>
 
     <!-- VIEW 4: DIET HEALTH & ENTROPY ANALYTICS -->
-    <section id="view-analytics" class="view" role="tabpanel" aria-label="Diet Health and Entropy Analytics">
+    <section id="view-analytics" class="view" role="tabpanel" aria-labelledby="tab-analytics" aria-label="Diet Health and Entropy Analytics" hidden>
       <div class="panel">
         <div class="panel-head">
           <h2>Diet Health &amp; Shannon Entropy Auditor</h2>
           <div class="action-row-tight">
+            <span id="analytics-target-badge" class="badge badge-dom">Target 40/35/25</span>
             <button id="btn-audit-manifest" type="button" class="btn btn-primary btn-sm">Audit Active Manifest</button>
             <button id="btn-audit-live" type="button" class="btn btn-secondary btn-sm">Audit Live Account</button>
           </div>
@@ -338,7 +370,7 @@
     </section>
 
     <!-- VIEW 5: LIVE SYNC, BROWSER LAUNCHER & ROLLBACK CONSOLE -->
-    <section id="view-console" class="view" role="tabpanel" aria-label="Live Sync, Browser Launcher and Rollback Console">
+    <section id="view-console" class="view" role="tabpanel" aria-labelledby="tab-console" aria-label="Live Sync, Browser Launcher and Rollback Console" hidden>
       <div class="grid-2">
         <article class="panel">
           <div class="panel-head">
@@ -404,7 +436,7 @@
     </section>
 
     <!-- MODE-AGNOSTIC ABOUT & PHILOSOPHY VIEW -->
-    <section id="view-about" class="about-shell hidden" role="dialog" aria-modal="false" aria-labelledby="about-title">
+    <section id="view-about" class="about-shell hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
       <div class="about-hero panel">
         <div class="about-hero-top">
           <div>
@@ -462,6 +494,17 @@
       </article>
     </section>
   </main>
+
+  <div id="studio-confirm-modal" class="confirm-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+    <div class="confirm-dialog panel">
+      <h2 id="confirm-modal-title" class="confirm-title">Confirm Action</h2>
+      <p id="confirm-modal-message" class="panel-desc"></p>
+      <div class="action-row">
+        <button id="btn-confirm-proceed" type="button" class="btn btn-danger">Confirm</button>
+        <button id="btn-confirm-cancel" type="button" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <div id="toast-rack" class="toast-rack" aria-live="polite"></div>
 </body>

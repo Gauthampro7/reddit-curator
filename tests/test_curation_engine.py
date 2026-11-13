@@ -5,26 +5,33 @@ from __future__ import annotations
 import json
 import re
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
+
+import setuptools
 
 from rcurator.analytics import FeedHealthAuditor
 from rcurator.engine.graph import BipartitePPRScorer
 from rcurator.engine.lexical import LexicalScorer, build_query_vector
 from rcurator.engine.ontology import (
+    ALL_STOPWORDS,
     CATEGORIES,
+    PROTECTED_SHORT_SYMBOLS,
     OntologyRepository,
     canonicalize_token,
     normalize_manifest,
     tokenize_technical_text,
+    validate_manifest,
 )
 from rcurator.engine.optimizer import (
     DOMINANCE_HARD_CAP,
     GoldenRatioOptimizer,
     total_variation_drift,
 )
-from rcurator.engine.pipeline import AutoPresetGenerator
+from rcurator.engine.pipeline import AutoPresetGenerator, _build_online_records
 from rcurator.mixer import PresetMixer
+from rcurator.nlp import tokenizer as nlp_tokenizer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ONTOLOGY_PATH = REPO_ROOT / "curator_data" / "subreddit_ontology.json"
@@ -162,6 +169,103 @@ class TestOntologyAndNormalization(unittest.TestCase):
         self.assertEqual(
             norm["custom_feeds"][0]["subreddits"], ["kernel", "ExperiencedDevs"]
         )
+
+    def test_manifest_normalization_preserves_explicit_category_and_hardens_inputs(self) -> None:
+        raw = {
+            "name": "Hardened Manifest",
+            "anchor_subreddits": [
+                {"name": "r/unixporn", "category": "aesthetic_leisure"},
+                {"name": "/r/askscience/", "category": "cognitive_curiosity"},
+            ],
+            "domain_priming_subreddits": [
+                {"name": "r/neuroscience", "category": "domain_priming"},
+                {"name": "UnixPorn", "category": "domain_priming"},
+                {"name": "r/kernel", "category": "invalid_category_xyz"},
+            ],
+            "custom_feeds": [
+                {"feed_name": "Systems Focus", "subreddits": ["r/rust", "kernel"]},
+                {"feed_name": "Systems-Focus", "subreddits": ["cpp"]},
+            ],
+        }
+        norm = normalize_manifest(raw, self.ontology)
+        self.assertEqual(
+            [s["name"] for s in norm["anchor_subreddits"]],
+            ["unixporn", "AskScience"],
+        )
+        # neuroscience preserves explicit valid domain_priming; unixporn deduped (anchor wins);
+        # kernel falls back to ontology category ("domain_priming") on invalid category
+        priming_by_name = {s["name"]: s["category"] for s in norm["domain_priming_subreddits"]}
+        self.assertEqual(priming_by_name, {"neuroscience": "domain_priming", "kernel": "domain_priming"})
+        self.assertEqual(
+            [f["feed_name"] for f in norm["custom_feeds"]],
+            ["systems_focus", "systems_focus_2"],
+        )
+        self.assertEqual(norm["custom_feeds"][0]["subreddits"], ["rust", "kernel"])
+
+        # Non-list field guards do not iterate characters of strings
+        malformed = {
+            "anchor_subreddits": "unixporn",
+            "domain_priming_subreddits": 123,
+            "custom_feeds": {"feed_name": "bad"},
+        }
+        norm_bad = normalize_manifest(malformed, self.ontology)
+        self.assertEqual(norm_bad["anchor_subreddits"], [])
+        self.assertEqual(norm_bad["domain_priming_subreddits"], [])
+        self.assertEqual(norm_bad["custom_feeds"], [])
+
+    def test_validate_manifest_reports_errors_warnings_and_summary(self) -> None:
+        valid_preset = json.loads((PRESETS_DIR / "cognitive_science.json").read_text(encoding="utf-8"))
+        res_ok = validate_manifest(valid_preset, self.ontology)
+        self.assertTrue(res_ok["valid"])
+        self.assertEqual(res_ok["errors"], [])
+        self.assertEqual(res_ok["summary"]["pillar_counts"]["domain_priming"], 8)
+
+        res_bad = validate_manifest({"anchor_subreddits": "not-a-list"}, self.ontology)
+        self.assertFalse(res_bad["valid"])
+        self.assertTrue(any("anchor_subreddits" in e for e in res_bad["errors"]))
+
+        res_warn = validate_manifest(
+            {
+                "anchor_subreddits": [{"name": "unixporn", "category": "aesthetic_leisure"}],
+                "domain_priming_subreddits": [
+                    {"name": "unixporn", "category": "domain_priming"},
+                    {"name": "brand_new_unrecognized_sub_xyz", "category": "domain_priming"},
+                ],
+                "custom_feeds": [
+                    {"feed_name": "dup_feed", "subreddits": ["rust"]},
+                    {"feed_name": "dup-feed", "subreddits": ["python"]},
+                ],
+            },
+            self.ontology,
+        )
+        self.assertTrue(res_warn["valid"])
+        self.assertTrue(any("Duplicate" in w for w in res_warn["warnings"]))
+        self.assertTrue(any("Colliding" in w for w in res_warn["warnings"]))
+        self.assertTrue(any("unrecognized" in w for w in res_warn["warnings"]))
+
+    def test_tokenizer_unified_between_nlp_and_engine(self) -> None:
+        self.assertIs(PROTECTED_SHORT_SYMBOLS, nlp_tokenizer.PROTECTED_SHORT_SYMBOLS)
+        self.assertIs(ALL_STOPWORDS, nlp_tokenizer.ALL_STOPWORDS)
+        self.assertIs(tokenize_technical_text, nlp_tokenizer.tokenize_technical_text)
+
+    def test_pyproject_pep420_packaging_discovers_presets_and_curator_data(self) -> None:
+        pyproject_data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        find_cfg = pyproject_data["tool"]["setuptools"]["packages"]["find"]
+        pkg_data = pyproject_data["tool"]["setuptools"]["package-data"]
+        self.assertTrue(find_cfg.get("namespaces"))
+        self.assertIn("curator_data*", find_cfg["include"])
+        self.assertIn("presets*", find_cfg["include"])
+        self.assertEqual(pkg_data["curator_data"], ["*.json"])
+        self.assertEqual(pkg_data["presets"], ["*.json"])
+
+        discovered = setuptools.PEP420PackageFinder.find(
+            where=str(REPO_ROOT),
+            include=find_cfg["include"],
+        )
+        self.assertIn("curator_data", discovered)
+        self.assertIn("presets", discovered)
+        self.assertIn("rcurator", discovered)
+        self.assertIn("rcurator.studio.static", discovered)
 
 
 class TestLexicalAndGraphScoring(unittest.TestCase):
@@ -399,6 +503,61 @@ class TestGoldenRatioOptimizerAndPipeline(unittest.TestCase):
         self.assertEqual(len(feeds[1]["subreddits"]), 5)
         for f in feeds:
             self.assertRegex(f["feed_name"], FEED_NAME_RE)
+        self.assertEqual(feeds[0]["display_name"], "Systems Engineering")
+        self.assertEqual(feeds[1]["display_name"], "Systems Engineering (2)")
+
+    def test_custom_feed_display_name_numbering_on_sanitized_collision(self) -> None:
+        from rcurator.engine.ontology import SubredditRecord
+        from rcurator.engine.optimizer import CandidateScore
+
+        opt = GoldenRatioOptimizer(self.ontology)
+        cands = [
+            CandidateScore(
+                record=SubredditRecord(
+                    name="sub_alpha",
+                    category="domain_priming",
+                    domains=("foo-bar",),
+                ),
+                final_relevance=2.0,
+                pillar_norm_relevance=1.0,
+                lexical_score=1.0,
+                pagerank_score=1.0,
+            ),
+            CandidateScore(
+                record=SubredditRecord(
+                    name="sub_beta",
+                    category="domain_priming",
+                    domains=("foo_bar",),
+                ),
+                final_relevance=1.0,
+                pillar_norm_relevance=1.0,
+                lexical_score=1.0,
+                pagerank_score=1.0,
+            ),
+        ]
+        feeds = opt._build_custom_feeds(cands)
+        self.assertEqual(len(feeds), 2)
+        self.assertEqual([f["feed_name"] for f in feeds], ["foo_bar", "foo_bar_2"])
+        self.assertEqual(feeds[0]["display_name"], "Foo-Bar")
+        self.assertEqual(feeds[1]["display_name"], "Foo Bar")
+
+    def test_online_records_filter_non_ontology_bigrams(self) -> None:
+        records = _build_online_records(
+            [
+                {
+                    "name": "r/TypeTheoryLab",
+                    "subscribers": 5000,
+                    "title": "Arbitrary words here",
+                    "public_description": "type theory discussions and random adjacent phrases",
+                }
+            ],
+            self.ontology,
+        )
+        self.assertEqual(len(records), 1)
+        kw = set(records[0].keywords)
+        self.assertIn("type theory", kw)
+        self.assertNotIn("arbitrary words", kw)
+        self.assertNotIn("random adjacent", kw)
 
 
 class TestAuditorAndPresetMixer(unittest.TestCase):
@@ -415,6 +574,17 @@ class TestAuditorAndPresetMixer(unittest.TestCase):
             data = json.loads(pfile.read_text(encoding="utf-8"))
             report = self.auditor.audit_manifest(data)
             self.assertEqual(report["unrecognized_subreddits"], [], pfile.name)
+            for cat in CATEGORIES:
+                self.assertGreaterEqual(
+                    report["pillar_counts"][cat],
+                    1,
+                    f"{pfile.name} missing pillar {cat}",
+                )
+            self.assertGreaterEqual(
+                report["golden_ratio_fidelity_score"],
+                75.0,
+                f"{pfile.name} low fidelity {report['golden_ratio_fidelity_score']}",
+            )
             self.assertGreaterEqual(report["golden_ratio_tvd_drift"], 0.0)
             self.assertLessEqual(report["golden_ratio_tvd_drift"], 1.0)
             self.assertGreaterEqual(report["golden_ratio_fidelity_score"], 0.0)
@@ -463,6 +633,21 @@ class TestAuditorAndPresetMixer(unittest.TestCase):
         self.assertEqual(mixed["subreddit_count"], 3)
         self.assertGreaterEqual(mixed["golden_ratio_tvd_drift"], 0.0)
         self.assertLessEqual(mixed["golden_ratio_tvd_drift"], 1.0)
+
+        all_unrec = self.auditor.audit_live(["not_a_real_sub_1", "not_a_real_sub_2"])
+        self.assertLessEqual(all_unrec["golden_ratio_fidelity_score"], 0.0)
+        self.assertEqual(all_unrec["composite_health_score"], 0.0)
+
+        # Explicit manifest category overrides ontology category in audit_manifest, not audit_live
+        explicit_manifest = {
+            "anchor_subreddits": [{"name": "unixporn", "category": "aesthetic_leisure"}],
+            "domain_priming_subreddits": [{"name": "neuroscience", "category": "domain_priming"}],
+        }
+        rep_manifest = self.auditor.audit_manifest(explicit_manifest)
+        self.assertEqual(rep_manifest["pillar_counts"]["domain_priming"], 1)
+        rep_live = self.auditor.audit_live(["unixporn", "neuroscience"])
+        self.assertEqual(rep_live["pillar_counts"]["cognitive_curiosity"], 1)
+        self.assertEqual(rep_live["pillar_counts"]["domain_priming"], 0)
 
     def test_preset_mixer_convex_blend_and_validation(self) -> None:
         mixed = self.mixer.mix(

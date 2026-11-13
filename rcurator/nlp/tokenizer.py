@@ -32,7 +32,7 @@ CANONICAL_ALIASES: dict[str, str] = {
     "sklearn": "scikit-learn",
 }
 
-PROTECTED_SHORT_TOKENS: frozenset[str] = frozenset(
+PROTECTED_SHORT_SYMBOLS: frozenset[str] = frozenset(
     {
         "c",
         "r",
@@ -52,10 +52,19 @@ PROTECTED_SHORT_TOKENS: frozenset[str] = frozenset(
         "ip",
         "3d",
         "2d",
+        "ar",
+        "vr",
+        "fp",
+        "hw",
+        "sw",
+        "dl",
+        "rl",
         "c#",
         "f#",
     }
 )
+
+PROTECTED_SHORT_TOKENS: frozenset[str] = PROTECTED_SHORT_SYMBOLS
 
 PROTECTED_PUNCTUATED_TOKENS: frozenset[str] = frozenset(
     {
@@ -158,7 +167,9 @@ ENGLISH_STOPWORDS: frozenset[str] = frozenset(
         "its",
         "itself",
         "just",
+        "may",
         "me",
+        "might",
         "more",
         "most",
         "my",
@@ -231,24 +242,32 @@ ENGLISH_STOPWORDS: frozenset[str] = frozenset(
 CODE_BOILERPLATE_STOPWORDS: frozenset[str] = frozenset(
     {
         "args",
+        "based",
         "bool",
         "break",
+        "build",
+        "building",
+        "built",
         "case",
         "class",
         "cls",
         "com",
+        "config",
         "const",
         "continue",
         "crate",
         "def",
         "default",
         "define",
+        "developed",
         "dict",
         "elif",
         "else",
         "endif",
         "enum",
+        "etc",
         "except",
+        "experience",
         "export",
         "extends",
         "false",
@@ -286,6 +305,8 @@ CODE_BOILERPLATE_STOPWORDS: frozenset[str] = frozenset(
         "pragma",
         "print",
         "private",
+        "project",
+        "projects",
         "protected",
         "pub",
         "public",
@@ -295,10 +316,12 @@ CODE_BOILERPLATE_STOPWORDS: frozenset[str] = frozenset(
         "self",
         "set",
         "sizeof",
+        "skills",
         "src",
         "static",
         "str",
         "struct",
+        "summary",
         "switch",
         "todo",
         "true",
@@ -308,10 +331,16 @@ CODE_BOILERPLATE_STOPWORDS: frozenset[str] = frozenset(
         "typename",
         "typeof",
         "undefined",
+        "use",
+        "used",
         "using",
         "utils",
         "var",
+        "via",
         "void",
+        "work",
+        "worked",
+        "working",
         "www",
     }
 )
@@ -327,6 +356,18 @@ _RAW_TOKEN_RE = re.compile(
 )
 _CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _PURE_NUMBER_RE = re.compile(r"^\d+(?:\.\d+)*$")
+_TOKEN_EXTRACT_RE = re.compile(
+    r"""
+    (?<![a-zA-Z0-9_])
+    (?:
+        \.[a-zA-Z0-9][a-zA-Z0-9_.-]*
+        | [a-zA-Z0-9][a-zA-Z0-9_.-]*<[a-zA-Z0-9_,\s]+>
+        | [a-zA-Z0-9][a-zA-Z0-9_.&+/-]*(?:\+{2}(?:\d{2})?|\#)
+        | [a-zA-Z0-9][a-zA-Z0-9_.&+/-]*
+    )
+    """,
+    re.VERBOSE,
+)
 
 
 def load_ontology_phrases(ontology_path: Path | None = None) -> list[str]:
@@ -372,6 +413,8 @@ def canonicalize_token(token: str) -> str:
         cleaned = cleaned.lstrip("<")
     if cleaned.endswith(">") and "<" not in cleaned:
         cleaned = cleaned.rstrip(">")
+    if "<" in cleaned and ">" in cleaned:
+        cleaned = re.sub(r"\s+", "", cleaned)
     cleaned = cleaned.strip(_EDGE_STRIP_CHARS).lower()
     if not cleaned:
         return ""
@@ -524,3 +567,81 @@ class TechnicalTokenizer:
         results.extend(self._match_trie_phrases(phrase_words))
 
         return results
+
+
+def _split_subtokens(raw_token: str, canonical: str) -> list[str]:
+    """Emit CamelCase / snake_case / hyphen / slash / dot sub-tokens for dual emission."""
+    parts: list[str] = []
+    camel_parts = _CAMEL_SPLIT_RE.split(raw_token)
+    candidates = camel_parts if len(camel_parts) > 1 else [raw_token]
+
+    for seg in candidates:
+        for piece in re.split(r"[_/\-.]+", seg):
+            sub = canonicalize_token(piece)
+            if not sub or sub == canonical:
+                continue
+            if len(sub) < 2 and sub not in PROTECTED_SHORT_SYMBOLS:
+                continue
+            if sub in ALL_STOPWORDS:
+                continue
+            parts.append(sub)
+    return parts
+
+
+def tokenize_technical_text(
+    text: str,
+    known_phrases: Iterable[str] = (),
+    include_subtokens: bool = True,
+    max_ngram: int = 3,
+) -> list[tuple[str, float]]:
+    """Deterministic technical lexer emitting weighted tokens and ontology phrases."""
+    if not text or not text.strip():
+        return []
+
+    primary_tokens: list[str] = []
+    emitted: list[tuple[str, float]] = []
+
+    for match in _TOKEN_EXTRACT_RE.finditer(text):
+        raw = match.group(0)
+        canon = canonicalize_token(raw)
+        if not canon:
+            continue
+
+        canon = canon.strip("-/")
+        if not canon:
+            continue
+        canon = CANONICAL_ALIASES.get(canon, canon)
+
+        if canon in ALL_STOPWORDS:
+            continue
+        if len(canon) < 2 and canon not in PROTECTED_SHORT_SYMBOLS:
+            continue
+
+        primary_tokens.append(canon)
+        emitted.append((canon, 1.0))
+
+        if include_subtokens:
+            for sub in _split_subtokens(raw, canon):
+                emitted.append((sub, 0.5))
+
+    n_toks = len(primary_tokens)
+    if max_ngram >= 2 and n_toks >= 2:
+        if isinstance(known_phrases, frozenset):
+            phrase_set = known_phrases
+        elif known_phrases:
+            phrase_set = frozenset(
+                " ".join(canonicalize_token(w) for w in p.split() if canonicalize_token(w))
+                for p in known_phrases
+                if p and " " in p
+            ) - {""}
+        else:
+            phrase_set = frozenset()
+
+        for n in range(2, min(max_ngram, n_toks) + 1):
+            mult = 1.0 + 0.35 * (n - 1)
+            for idx in range(n_toks - n + 1):
+                gram = " ".join(primary_tokens[idx : idx + n])
+                if not phrase_set or gram in phrase_set:
+                    emitted.append((gram, mult))
+
+    return emitted

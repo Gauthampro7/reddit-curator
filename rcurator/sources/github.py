@@ -81,6 +81,7 @@ class GitHubMiner:
         self._session = session or requests.Session()
         self._timeout = float(timeout)
         self.last_request_count = 0
+        self.last_warnings: list[str] = []
 
     def _ensure_cache_dir(self) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -153,9 +154,12 @@ class GitHubMiner:
             resp = self._session.get(url, headers=headers, timeout=self._timeout)
         except requests.RequestException as exc:
             if cached is not None:
+                self.last_warnings.append(f"GitHub request failed for {url} ({exc}); using stale cache.")
                 return cached.get("payload")
+            msg = f"GitHub request failed for {url}: {exc}"
+            self.last_warnings.append(msg)
             if required:
-                raise RuntimeError(f"GitHub request failed for {url}: {exc}") from exc
+                raise RuntimeError(msg) from exc
             return None
 
         rem_hdr = resp.headers.get("X-RateLimit-Remaining")
@@ -176,20 +180,33 @@ class GitHubMiner:
 
         if resp.status_code in (403, 429):
             if cached is not None:
+                self.last_warnings.append(
+                    f"GitHub HTTP {resp.status_code} for {url}; using stale cache."
+                )
                 return cached.get("payload")
+            msg = f"GitHub rate limited / forbidden ({resp.status_code}) with no cache for {url}"
+            self.last_warnings.append(msg)
             if required:
-                raise RuntimeError(f"GitHub rate limited ({resp.status_code}) with no cache for {url}")
+                raise RuntimeError(msg)
             return None
 
         if resp.status_code == 404:
-            if required and cached is None:
-                raise RuntimeError(f"GitHub resource not found (404): {url}")
-            return cached.get("payload") if cached else None
+            if cached is None:
+                msg = f"GitHub resource not found (404): {url}"
+                self.last_warnings.append(msg)
+                if required:
+                    raise RuntimeError(msg)
+                return None
+            self.last_warnings.append(f"GitHub HTTP 404 for {url}; using stale cache.")
+            return cached.get("payload")
 
         if cached is not None:
+            self.last_warnings.append(f"GitHub HTTP {resp.status_code} for {url}; using stale cache.")
             return cached.get("payload")
+        msg = f"GitHub HTTP {resp.status_code} for {url}"
+        self.last_warnings.append(msg)
         if required:
-            raise RuntimeError(f"GitHub HTTP {resp.status_code} for {url}")
+            raise RuntimeError(msg)
         return None
 
     def mine(self, username: str) -> list[SignalEvidence]:
@@ -198,6 +215,7 @@ class GitHubMiner:
         if not _USERNAME_RE.match(uname):
             raise ValueError(f"Invalid GitHub username: {username!r}")
 
+        self.last_warnings = []
         state: dict[str, Any] = {
             "requests_made": 0,
             "rate_remaining": 5000 if self.token else 60,
@@ -210,7 +228,7 @@ class GitHubMiner:
             repos_url = f"{GITHUB_API_BASE}/users/{uname}/repos?per_page=100&sort=pushed"
             starred_url = f"{GITHUB_API_BASE}/users/{uname}/starred?per_page=100"
 
-            profile = self._cached_get(profile_url, state, required=False)
+            profile = self._cached_get(profile_url, state, required=True)
             if isinstance(profile, dict):
                 self._extract_profile(uname, profile, evidences)
 
@@ -245,6 +263,9 @@ class GitHubMiner:
                     if stale_readme is not None and isinstance(stale_readme.get("payload"), dict):
                         self._extract_readme(uname, rname, stale_readme["payload"], omega, evidences)
                         continue
+                    self.last_warnings.append(
+                        f"GitHub rate limit low ({state['rate_remaining']} remaining); skipped README fetch."
+                    )
                     break
                 if state["requests_made"] >= MAX_GET_BUDGET:
                     break

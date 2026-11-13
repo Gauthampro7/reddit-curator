@@ -6,7 +6,12 @@ import math
 from collections import defaultdict
 from typing import Any, Sequence
 
-from rcurator.engine.ontology import CATEGORIES, OntologyRepository, normalize_manifest
+from rcurator.engine.ontology import (
+    CATEGORIES,
+    OntologyRepository,
+    _strip_r_prefix,
+    normalize_manifest,
+)
 from rcurator.engine.optimizer import normalize_target_ratio, total_variation_drift
 
 EPS: float = 1e-9
@@ -66,7 +71,7 @@ class FeedHealthAuditor:
         entries: list[tuple[str, str | None]] = []
         seen: set[str] = set()
         for raw in subscribed_names:
-            name = str(raw).strip()
+            name = _strip_r_prefix(str(raw))
             if name and name.lower() not in seen:
                 seen.add(name.lower())
                 entries.append((name, None))
@@ -113,16 +118,21 @@ class FeedHealthAuditor:
 
         for raw_name, fallback_cat in entries:
             rec = self.ontology.get(raw_name)
+            explicit_cat = (
+                "domain_priming"
+                if fallback_cat == "high_signal_systems_priming"
+                else fallback_cat
+            )
             if rec is not None:
                 cname = rec.name
-                cat = rec.category
+                cat = explicit_cat if explicit_cat in CATEGORIES else rec.category
                 vel = rec.velocity
                 sig = rec.signal_density
                 domains = rec.domains
             else:
                 unrecognized.append(raw_name)
                 cname = raw_name
-                cat = fallback_cat if fallback_cat in CATEGORIES else "unrecognized"
+                cat = explicit_cat if explicit_cat in CATEGORIES else "unrecognized"
                 vel = DEFAULT_UNRECOGNIZED_VELOCITY
                 sig = DEFAULT_UNRECOGNIZED_SIGNAL_DENSITY
                 domains = ()
@@ -206,14 +216,17 @@ class FeedHealthAuditor:
         balance_health = 0.60 * dominance_health + 0.40 * gini_health
         unknown_penalty = min(15.0, 3.0 * len(unrecognized))
 
-        composite = (
-            0.50 * fidelity
-            + 0.25 * (100.0 * mean_signal)
-            + 0.15 * balance_health
-            + 0.10 * (100.0 * shannon_norm)
-            - unknown_penalty
-        )
-        composite = max(0.0, min(100.0, composite))
+        if pillar_vel_total <= 0.0:
+            composite = 0.0
+        else:
+            composite = (
+                0.50 * fidelity
+                + 0.25 * (100.0 * mean_signal)
+                + 0.15 * balance_health
+                + 0.10 * (100.0 * shannon_norm)
+                - unknown_penalty
+            )
+            composite = max(0.0, min(100.0, composite))
 
         recommendations = self._build_recommendations(
             items=items,

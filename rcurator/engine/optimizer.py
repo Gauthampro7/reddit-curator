@@ -589,17 +589,18 @@ class GoldenRatioOptimizer:
                 sub_names[i : i + MAX_CUSTOM_FEED_SUBS]
                 for i in range(0, len(sub_names), MAX_CUSTOM_FEED_SUBS)
             ]
-            for chunk_idx, chunk in enumerate(chunks, start=1):
-                if chunk_idx == 1 and base_name not in used_feed_names:
+            for chunk_num, chunk in enumerate(chunks, start=1):
+                if chunk_num == 1 and base_name not in used_feed_names:
                     fname = base_name
                 else:
-                    suffix = f"_{chunk_idx}"
+                    name_idx = 2 if chunk_num == 1 else chunk_num
+                    suffix = f"_{name_idx}"
                     fname = sanitize_feed_name(
                         f"{base_name[: 50 - len(suffix)]}{suffix}"
                     )
                     while fname in used_feed_names:
-                        chunk_idx += 1
-                        suffix = f"_{chunk_idx}"
+                        name_idx += 1
+                        suffix = f"_{name_idx}"
                         fname = sanitize_feed_name(
                             f"{base_name[: 50 - len(suffix)]}{suffix}"
                         )
@@ -609,8 +610,8 @@ class GoldenRatioOptimizer:
                         "feed_name": fname,
                         "display_name": (
                             display_title
-                            if chunk_idx == 1
-                            else f"{display_title} ({chunk_idx})"
+                            if chunk_num == 1
+                            else f"{display_title} ({chunk_num})"
                         ),
                         "description_md": (
                             f"Private distraction-free domain feed for {display_title.lower()} "

@@ -20,11 +20,6 @@
       "description": "Dynamic tiling Wayland compositor configuration, animations, and custom ricing."
     },
     {
-      "name": "MechanicalKeyboards",
-      "category": "aesthetic_leisure",
-      "description": "Custom mechanical keyboards, switch engineering, acoustic tuning, and industrial craft."
-    },
-    {
       "name": "thinkpad",
       "category": "aesthetic_leisure",
       "description": "Modular ThinkPad workstations, Coreboot, Linux compatibility, and repairability."
@@ -52,39 +47,14 @@
   ],
   "domain_priming_subreddits": [
     {
-      "name": "Fedora",
-      "category": "domain_priming",
-      "description": "Modern Fedora Linux workstation engineering, immutable desktops, and Wayland tooling."
-    },
-    {
       "name": "NixOS",
       "category": "domain_priming",
       "description": "Declarative, reproducible Linux system configuration via Nix expressions and flakes."
     },
     {
-      "name": "archlinux",
-      "category": "domain_priming",
-      "description": "Minimalist rolling-release Linux administration, AUR packaging, and Arch Wiki craft."
-    },
-    {
-      "name": "neovim",
-      "category": "domain_priming",
-      "description": "Extensible modal editing, Lua plugin architecture, Tree-sitter, and LSP workflows."
-    },
-    {
       "name": "commandline",
       "category": "domain_priming",
       "description": "Terminal utilities, shell craftsmanship, and composable Unix CLI workflows."
-    },
-    {
-      "name": "linux",
-      "category": "domain_priming",
-      "description": "Linux ecosystem developments, kernel news, and power-user workflows."
-    },
-    {
-      "name": "selfhosted",
-      "category": "domain_priming",
-      "description": "Self-hosted open-source applications, reverse proxies, and sovereign personal infrastructure."
     },
     {
       "name": "podman",
@@ -118,7 +88,8 @@
         "linux",
         "selfhosted",
         "podman",
-        "opensource"
+        "opensource",
+        "MechanicalKeyboards"
       ]
     }
   ]

@@ -77,7 +77,10 @@ def _build_online_records(
         tokens = [
             tok
             for tok, _ in tokenize_technical_text(
-                combined_desc, include_subtokens=False, max_ngram=2
+                combined_desc,
+                known_phrases=ontology.known_phrases,
+                include_subtokens=False,
+                max_ngram=2,
             )
         ]
         kw = tuple(dict.fromkeys(tokens))[:12]

@@ -57,21 +57,6 @@
       "description": "High-concurrency async Python APIs with FastAPI, Pydantic v2, and OpenAPI schemas."
     },
     {
-      "name": "Python",
-      "category": "domain_priming",
-      "description": "Python ecosystem, CPython internals, typing, asyncio, and modern uv/ruff tooling."
-    },
-    {
-      "name": "typescript",
-      "category": "domain_priming",
-      "description": "Type-safe JavaScript architecture, advanced type-level programming, and runtime schemas."
-    },
-    {
-      "name": "reactjs",
-      "category": "domain_priming",
-      "description": "React component architecture, Server Components, state management, and rendering perf."
-    },
-    {
       "name": "nextjs",
       "category": "domain_priming",
       "description": "Fullstack React with Next.js App Router, SSR/ISR caching, and edge deployments."
@@ -85,11 +70,6 @@
       "name": "elixir",
       "category": "domain_priming",
       "description": "Concurrent, fault-tolerant distributed applications on the Erlang BEAM VM and Phoenix."
-    },
-    {
-      "name": "golang",
-      "category": "domain_priming",
-      "description": "Concurrent cloud-native services, CLI binaries, gRPC, and Go runtime performance."
     },
     {
       "name": "htmx",

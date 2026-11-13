@@ -1,12 +1,20 @@
-"""Ontology repository, manifest normalizer, and standalone technical tokenizer fallback."""
+"""Ontology repository, manifest normalizer, and validation helpers."""
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
+
+from rcurator.nlp.tokenizer import (
+    ALL_STOPWORDS,
+    CANONICAL_ALIASES,
+    PROTECTED_SHORT_SYMBOLS,
+    canonicalize_token,
+    tokenize_technical_text,
+)
 
 CATEGORIES: tuple[str, str, str] = (
     "aesthetic_leisure",
@@ -14,345 +22,14 @@ CATEGORIES: tuple[str, str, str] = (
     "domain_priming",
 )
 
-# Frozen canonical alias map matching #9 §3 (identical to Slice 2 TechnicalTokenizer).
-CANONICAL_ALIASES: dict[str, str] = {
-    "nodejs": "node.js",
-    "nextjs": "next.js",
-    "vuejs": "vue.js",
-    "nuxtjs": "nuxt.js",
-    "threejs": "three.js",
-    "d3js": "d3.js",
-    "dotnet": ".net",
-    "csharp": "c#",
-    "fsharp": "f#",
-    "cpp": "c++",
-    "cxx": "c++",
-    "llamacpp": "llama.cpp",
-    "k8s": "kubernetes",
-    "k3s": "kubernetes",
-    "golang": "go",
-    "postgres": "postgresql",
-    "py": "python",
-    "rs": "rust",
-    "ts": "typescript",
-    "js": "javascript",
-    "tf": "tensorflow",
-    "sklearn": "scikit-learn",
-}
+STOPWORDS: frozenset[str] = ALL_STOPWORDS
 
-PROTECTED_SHORT_SYMBOLS: frozenset[str] = frozenset(
-    {
-        "c",
-        "r",
-        "go",
-        "ml",
-        "ai",
-        "os",
-        "db",
-        "ir",
-        "vm",
-        "ui",
-        "ux",
-        "io",
-        "3d",
-        "2d",
-        "ar",
-        "vr",
-        "qa",
-        "ci",
-        "cd",
-        "fp",
-        "hw",
-        "sw",
-        "dl",
-        "rl",
-    }
-)
-
-STOPWORDS: frozenset[str] = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "are",
-        "as",
-        "at",
-        "be",
-        "been",
-        "being",
-        "but",
-        "by",
-        "can",
-        "could",
-        "did",
-        "do",
-        "does",
-        "doing",
-        "done",
-        "for",
-        "from",
-        "had",
-        "has",
-        "have",
-        "having",
-        "he",
-        "her",
-        "here",
-        "hers",
-        "him",
-        "his",
-        "how",
-        "i",
-        "if",
-        "in",
-        "into",
-        "is",
-        "it",
-        "its",
-        "just",
-        "may",
-        "me",
-        "might",
-        "more",
-        "most",
-        "my",
-        "no",
-        "nor",
-        "not",
-        "of",
-        "on",
-        "only",
-        "or",
-        "other",
-        "our",
-        "out",
-        "over",
-        "own",
-        "same",
-        "she",
-        "should",
-        "so",
-        "some",
-        "such",
-        "than",
-        "that",
-        "the",
-        "their",
-        "them",
-        "then",
-        "there",
-        "these",
-        "they",
-        "this",
-        "those",
-        "through",
-        "to",
-        "too",
-        "under",
-        "until",
-        "up",
-        "using",
-        "use",
-        "used",
-        "very",
-        "was",
-        "we",
-        "were",
-        "what",
-        "when",
-        "where",
-        "which",
-        "while",
-        "who",
-        "whom",
-        "why",
-        "will",
-        "with",
-        "would",
-        "you",
-        "your",
-        # Code / resume boilerplate
-        "true",
-        "false",
-        "null",
-        "none",
-        "self",
-        "return",
-        "import",
-        "def",
-        "class",
-        "const",
-        "let",
-        "var",
-        "function",
-        "public",
-        "private",
-        "static",
-        "void",
-        "etc",
-        "via",
-        "based",
-        "built",
-        "build",
-        "building",
-        "developed",
-        "work",
-        "worked",
-        "working",
-        "project",
-        "projects",
-        "experience",
-        "summary",
-        "skills",
-    }
-)
-
-_TOKEN_EXTRACT_RE = re.compile(
-    r"""
-    (?<![a-zA-Z0-9_])
-    (?:
-        \.[a-zA-Z0-9][a-zA-Z0-9_.-]*
-        | [a-zA-Z0-9][a-zA-Z0-9_.-]*<[a-zA-Z0-9_,\s]+>
-        | [a-zA-Z0-9][a-zA-Z0-9_.&+/-]*(?:\+{2}(?:\d{2})?|\#)
-        | [a-zA-Z0-9][a-zA-Z0-9_.&+/-]*
-    )
-    """,
-    re.VERBOSE,
-)
-
-_CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _FEED_NAME_SANITIZE_RE = re.compile(r"[^a-z0-9_]+")
 _VALID_FEED_NAME_RE = re.compile(r"^[a-z0-9_]{1,50}$")
 
 DEFAULT_ONTOLOGY_PATH = (
     Path(__file__).resolve().parents[2] / "curator_data" / "subreddit_ontology.json"
 )
-
-
-def _builtin_canonicalize_token(token: str) -> str:
-    """Canonicalize a technical token while preserving punctuated identifiers (#9 §3)."""
-    cleaned = token.strip().strip("\"'`()[]{},;:!?")
-    if not cleaned:
-        return ""
-
-    # Strip trailing sentence dots (e.g. "node.js." -> "node.js") while keeping internal dots
-    # and leading dots (.net, .py, .bpf.c).
-    while len(cleaned) > 1 and cleaned.endswith("."):
-        cleaned = cleaned[:-1]
-
-    # Collapse spaces inside generic brackets like span<t>
-    cleaned = re.sub(r"\s+", "", cleaned)
-    lowered = cleaned.lower()
-
-    if lowered in CANONICAL_ALIASES:
-        return CANONICAL_ALIASES[lowered]
-
-    return lowered
-
-
-_SLICE2_CANONICALIZER: Any = None
-_SLICE2_CHECKED: bool = False
-
-
-def canonicalize_token(token: str) -> str:
-    """Use Slice 2 canonicalizer when available, else built-in identical fallback."""
-    global _SLICE2_CANONICALIZER, _SLICE2_CHECKED
-    if not _SLICE2_CHECKED:
-        _SLICE2_CHECKED = True
-        try:
-            from rcurator.nlp.tokenizer import canonicalize_token as slice2_canon
-
-            _SLICE2_CANONICALIZER = slice2_canon
-        except ImportError:
-            _SLICE2_CANONICALIZER = None
-
-    if _SLICE2_CANONICALIZER is not None:
-        result = _SLICE2_CANONICALIZER(token)
-        if result:
-            return CANONICAL_ALIASES.get(result, result)
-        return result
-    return _builtin_canonicalize_token(token)
-
-
-def _split_subtokens(raw_token: str, canonical: str) -> list[str]:
-    """Emit CamelCase / snake_case / hyphen / slash / dot sub-tokens for dual emission."""
-    parts: list[str] = []
-    # Split CamelCase on raw form first
-    camel_parts = _CAMEL_SPLIT_RE.split(raw_token)
-    candidates = camel_parts if len(camel_parts) > 1 else [raw_token]
-
-    for seg in candidates:
-        for piece in re.split(r"[_/\-.]+", seg):
-            sub = _builtin_canonicalize_token(piece)
-            if not sub or sub == canonical:
-                continue
-            if len(sub) < 2 and sub not in PROTECTED_SHORT_SYMBOLS:
-                continue
-            if sub in STOPWORDS:
-                continue
-            parts.append(sub)
-    return parts
-
-
-def tokenize_technical_text(
-    text: str,
-    known_phrases: Iterable[str] = (),
-    include_subtokens: bool = True,
-    max_ngram: int = 3,
-) -> list[tuple[str, float]]:
-    """Deterministic technical lexer emitting weighted tokens and ontology phrases."""
-    if not text or not text.strip():
-        return []
-
-    primary_tokens: list[str] = []
-    emitted: list[tuple[str, float]] = []
-
-    for match in _TOKEN_EXTRACT_RE.finditer(text):
-        raw = match.group(0)
-        canon = canonicalize_token(raw)
-        if not canon:
-            continue
-
-        # Strip trailing '-' or '/' artifacts
-        canon = canon.strip("-/")
-        if not canon:
-            continue
-        canon = CANONICAL_ALIASES.get(canon, canon)
-
-        if canon in STOPWORDS:
-            continue
-        if len(canon) < 2 and canon not in PROTECTED_SHORT_SYMBOLS:
-            continue
-
-        primary_tokens.append(canon)
-        emitted.append((canon, 1.0))
-
-        if include_subtokens:
-            for sub in _split_subtokens(raw, canon):
-                emitted.append((sub, 0.5))
-
-    # Extract n-gram phrases (specificity multiplier 1 + 0.35 * (n - 1))
-    n_toks = len(primary_tokens)
-    if max_ngram >= 2 and n_toks >= 2:
-        if isinstance(known_phrases, frozenset):
-            phrase_set = known_phrases
-        elif known_phrases:
-            phrase_set = frozenset(
-                " ".join(canonicalize_token(w) for w in p.split() if canonicalize_token(w))
-                for p in known_phrases
-                if p and " " in p
-            ) - {""}
-        else:
-            phrase_set = frozenset()
-
-        for n in range(2, min(max_ngram, n_toks) + 1):
-            mult = 1.0 + 0.35 * (n - 1)
-            for idx in range(n_toks - n + 1):
-                gram = " ".join(primary_tokens[idx : idx + n])
-                if not phrase_set or gram in phrase_set:
-                    emitted.append((gram, mult))
-
-    return emitted
 
 
 def sanitize_feed_name(raw_name: str, fallback: str = "domain_focus") -> str:
@@ -573,18 +250,33 @@ def _normalize_ratio_dict(raw_ratio: Any) -> dict[str, float]:
     }
 
 
+def _strip_r_prefix(raw_name: str) -> str:
+    """Strip leading r/ or /r/ and trailing slashes from a subreddit name."""
+    name = raw_name.strip()
+    low = name.lower()
+    if low.startswith("/r/"):
+        name = name[3:]
+    elif low.startswith("r/"):
+        name = name[2:]
+    return name.strip().strip("/")
+
+
 def _normalize_sub_entry(
     item: Any,
     default_category: str,
     ontology: OntologyRepository | None,
 ) -> dict[str, Any] | None:
+    explicit_cat: str | None = None
     if isinstance(item, str):
-        raw_name = item.strip()
-        raw_cat = default_category
+        raw_name = _strip_r_prefix(item)
         desc = ""
     elif isinstance(item, dict) and item.get("name"):
-        raw_name = str(item["name"]).strip()
-        raw_cat = str(item.get("category") or default_category).strip()
+        raw_name = _strip_r_prefix(str(item["name"]))
+        raw_explicit = str(item.get("category") or "").strip()
+        if raw_explicit == "high_signal_systems_priming":
+            raw_explicit = "domain_priming"
+        if raw_explicit in CATEGORIES:
+            explicit_cat = raw_explicit
         desc = str(item.get("description") or "").strip()
     else:
         return None
@@ -592,12 +284,17 @@ def _normalize_sub_entry(
     if not raw_name:
         return None
 
-    if raw_cat == "high_signal_systems_priming":
-        raw_cat = "domain_priming"
-
+    fallback_cat = (
+        default_category if default_category in CATEGORIES else "domain_priming"
+    )
     rec = ontology.get(raw_name) if ontology is not None else None
     canon_name = rec.name if rec is not None else raw_name
-    final_cat = rec.category if rec is not None else raw_cat
+    if explicit_cat is not None:
+        final_cat = explicit_cat
+    elif rec is not None and rec.category in CATEGORIES:
+        final_cat = rec.category
+    else:
+        final_cat = fallback_cat
     if not desc and rec is not None:
         desc = rec.description
 
@@ -612,6 +309,9 @@ def normalize_manifest(
     data: dict[str, Any], ontology: OntologyRepository | None = None
 ) -> dict[str, Any]:
     """Normalize v1/v2 or legacy curation_manifest.json into canonical manifest schema (#9 §3)."""
+    if not isinstance(data, dict):
+        raise ValueError("Manifest payload must be a JSON object")
+
     if ontology is None and DEFAULT_ONTOLOGY_PATH.is_file():
         ontology = OntologyRepository.load(DEFAULT_ONTOLOGY_PATH)
 
@@ -623,38 +323,57 @@ def normalize_manifest(
         or {}
     )
 
-    anchors_raw = data.get("anchor_subreddits") or []
+    anchors_raw = data.get("anchor_subreddits")
+    if not isinstance(anchors_raw, list):
+        anchors_raw = []
     anchors: list[dict[str, Any]] = []
-    seen_anchors: set[str] = set()
+    seen_tier1: set[str] = set()
     for item in anchors_raw:
         entry = _normalize_sub_entry(item, "aesthetic_leisure", ontology)
-        if entry and entry["name"].lower() not in seen_anchors:
-            seen_anchors.add(entry["name"].lower())
+        if entry and entry["name"].lower() not in seen_tier1:
+            seen_tier1.add(entry["name"].lower())
             anchors.append(entry)
 
-    priming_raw = (
-        data.get("domain_priming_subreddits")
-        or data.get("tier1_systems_subreddits")
-        or []
-    )
+    priming_raw = data.get("domain_priming_subreddits")
+    if priming_raw is None:
+        priming_raw = data.get("tier1_systems_subreddits")
+    if not isinstance(priming_raw, list):
+        priming_raw = []
     priming: list[dict[str, Any]] = []
-    seen_priming: set[str] = set()
     for item in priming_raw:
         entry = _normalize_sub_entry(item, "domain_priming", ontology)
-        if entry and entry["name"].lower() not in seen_priming:
-            seen_priming.add(entry["name"].lower())
+        if entry and entry["name"].lower() not in seen_tier1:
+            seen_tier1.add(entry["name"].lower())
             priming.append(entry)
 
+    feeds_raw = data.get("custom_feeds")
+    if not isinstance(feeds_raw, list):
+        feeds_raw = []
     feeds_out: list[dict[str, Any]] = []
-    for feed in data.get("custom_feeds") or []:
+    used_feed_names: set[str] = set()
+    for feed in feeds_raw:
         if not isinstance(feed, dict):
             continue
         raw_fname = str(feed.get("feed_name") or feed.get("name") or "domain_focus")
-        fname = sanitize_feed_name(raw_fname)
+        base_fname = sanitize_feed_name(raw_fname)
+        fname = base_fname
+        suffix_idx = 2
+        while fname in used_feed_names:
+            suffix = f"_{suffix_idx}"
+            fname = sanitize_feed_name(f"{base_fname[: 50 - len(suffix)]}{suffix}")
+            suffix_idx += 1
+        used_feed_names.add(fname)
+
+        subs_raw = feed.get("subreddits")
+        if not isinstance(subs_raw, list):
+            subs_raw = []
         canon_subs: list[str] = []
         seen_feed_subs: set[str] = set()
-        for sub in feed.get("subreddits") or []:
-            sub_name = str(sub.get("name") if isinstance(sub, dict) else sub).strip()
+        for sub in subs_raw:
+            raw_sub = sub.get("name") if isinstance(sub, dict) else sub
+            if raw_sub is None or isinstance(raw_sub, (dict, list, bool)):
+                continue
+            sub_name = _strip_r_prefix(str(raw_sub))
             if not sub_name:
                 continue
             cname = ontology.canonical_name(sub_name) if ontology is not None else sub_name
@@ -696,7 +415,7 @@ def normalize_manifest(
         if isinstance(prov.get("explanations"), dict) and ontology is not None:
             norm_exp: dict[str, Any] = {}
             for k, v in prov["explanations"].items():
-                ck = ontology.canonical_name(str(k))
+                ck = ontology.canonical_name(_strip_r_prefix(str(k)))
                 if isinstance(v, dict):
                     item = dict(v)
                     item["name"] = ck
@@ -709,3 +428,167 @@ def normalize_manifest(
         out["curation_provenance"] = prov
 
     return out
+
+
+def validate_manifest(
+    data: Any, ontology: OntologyRepository | None = None
+) -> dict[str, Any]:
+    """Validate a raw or normalized manifest and return structured errors, warnings, and summary."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not isinstance(data, dict):
+        return {
+            "valid": False,
+            "errors": ["Manifest root must be a JSON object."],
+            "warnings": [],
+            "normalized": None,
+            "summary": {},
+        }
+
+    if ontology is None and DEFAULT_ONTOLOGY_PATH.is_file():
+        ontology = OntologyRepository.load(DEFAULT_ONTOLOGY_PATH)
+
+    if "anchor_subreddits" in data and data["anchor_subreddits"] is not None:
+        if not isinstance(data["anchor_subreddits"], list):
+            errors.append("'anchor_subreddits' must be a list.")
+    if "domain_priming_subreddits" in data and data["domain_priming_subreddits"] is not None:
+        if not isinstance(data["domain_priming_subreddits"], list):
+            errors.append("'domain_priming_subreddits' must be a list.")
+    elif "tier1_systems_subreddits" in data and data["tier1_systems_subreddits"] is not None:
+        if not isinstance(data["tier1_systems_subreddits"], list):
+            errors.append("'tier1_systems_subreddits' must be a list.")
+    if "custom_feeds" in data and data["custom_feeds"] is not None:
+        if not isinstance(data["custom_feeds"], list):
+            errors.append("'custom_feeds' must be a list.")
+
+    # Inspect raw tier-1 items for malformed entries, invalid categories, and duplicates
+    seen_raw_t1: set[str] = set()
+    for field_name in ("anchor_subreddits", "domain_priming_subreddits", "tier1_systems_subreddits"):
+        raw_list = data.get(field_name)
+        if not isinstance(raw_list, list):
+            continue
+        for idx, item in enumerate(raw_list):
+            if isinstance(item, str):
+                sname = _strip_r_prefix(item)
+                if not sname:
+                    errors.append(f"{field_name}[{idx}] is empty.")
+                    continue
+            elif isinstance(item, dict) and item.get("name"):
+                sname = _strip_r_prefix(str(item["name"]))
+                if not sname:
+                    errors.append(f"{field_name}[{idx}].name is empty.")
+                    continue
+                raw_cat = str(item.get("category") or "").strip()
+                if (
+                    raw_cat
+                    and raw_cat != "high_signal_systems_priming"
+                    and raw_cat not in CATEGORIES
+                ):
+                    warnings.append(
+                        f"{field_name}[{idx}] (r/{sname}) has unknown category '{raw_cat}'; falling back."
+                    )
+            else:
+                errors.append(f"{field_name}[{idx}] must be a subreddit string or object with 'name'.")
+                continue
+
+            low = sname.lower()
+            if low in seen_raw_t1:
+                warnings.append(f"Duplicate Tier 1 subreddit r/{sname} in {field_name}; deduplicated.")
+            else:
+                seen_raw_t1.add(low)
+
+    # Inspect raw custom_feeds
+    raw_feeds = data.get("custom_feeds")
+    if isinstance(raw_feeds, list):
+        seen_raw_fnames: set[str] = set()
+        for idx, feed in enumerate(raw_feeds):
+            if not isinstance(feed, dict):
+                errors.append(f"custom_feeds[{idx}] must be a JSON object.")
+                continue
+            subs_val = feed.get("subreddits")
+            if subs_val is not None and not isinstance(subs_val, list):
+                errors.append(f"custom_feeds[{idx}].subreddits must be a list.")
+            elif not subs_val:
+                warnings.append(f"custom_feeds[{idx}] has no subreddits.")
+            elif len(subs_val) > 100:
+                warnings.append(
+                    f"custom_feeds[{idx}] has {len(subs_val)} subreddits (>100 Reddit limit; will partition on sync)."
+                )
+            raw_fn = str(feed.get("feed_name") or feed.get("name") or "domain_focus")
+            san = sanitize_feed_name(raw_fn)
+            if san in seen_raw_fnames:
+                warnings.append(f"Colliding custom feed name '{san}' will be disambiguated.")
+            seen_raw_fnames.add(san)
+
+    norm = normalize_manifest(data, ontology)
+
+    # Validate ratio numbers
+    ratio = norm.get("golden_ratio_distribution", {})
+    ratio_vals: list[float] = []
+    for k in (
+        "aesthetic_leisure_target_pct",
+        "cognitive_curiosity_target_pct",
+        "domain_priming_target_pct",
+    ):
+        try:
+            val = float(ratio.get(k, 0.0))
+        except (TypeError, ValueError):
+            errors.append(f"golden_ratio_distribution.{k} must be numeric.")
+            val = 0.0
+        if val < 0.0:
+            errors.append(f"golden_ratio_distribution.{k} must be non-negative.")
+        ratio_vals.append(val)
+    ratio_sum = sum(ratio_vals)
+    if ratio_sum <= 0.0:
+        errors.append("golden_ratio_distribution target percentages must sum to > 0.")
+    elif abs(ratio_sum - 100.0) > 1.0:
+        warnings.append(
+            f"golden_ratio_distribution percentages sum to {ratio_sum:.1f} instead of 100."
+        )
+
+    tier1 = norm["anchor_subreddits"] + norm["domain_priming_subreddits"]
+    if not tier1:
+        errors.append("Manifest contains no Tier 1 subreddits.")
+
+    pillar_counts: dict[str, int] = {c: 0 for c in CATEGORIES}
+    for entry in tier1:
+        cat = entry.get("category")
+        if cat in pillar_counts:
+            pillar_counts[cat] += 1
+    for cat, cnt in pillar_counts.items():
+        if tier1 and cnt == 0:
+            warnings.append(f"Missing '{cat}' pillar in Tier 1.")
+
+    unrecognized: list[str] = []
+    if ontology is not None:
+        seen_unrec: set[str] = set()
+        for entry in tier1:
+            n = entry["name"]
+            if ontology.get(n) is None and n.lower() not in seen_unrec:
+                seen_unrec.add(n.lower())
+                unrecognized.append(n)
+        for feed in norm["custom_feeds"]:
+            for n in feed["subreddits"]:
+                if ontology.get(n) is None and n.lower() not in seen_unrec:
+                    seen_unrec.add(n.lower())
+                    unrecognized.append(n)
+        if unrecognized:
+            warnings.append(
+                f"{len(unrecognized)} unrecognized subreddit(s) not in ontology: {', '.join(unrecognized[:5])}."
+            )
+
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "normalized": norm,
+        "summary": {
+            "tier1_count": len(tier1),
+            "anchor_count": len(norm["anchor_subreddits"]),
+            "domain_priming_count": len(norm["domain_priming_subreddits"]),
+            "custom_feed_count": len(norm["custom_feeds"]),
+            "pillar_counts": pillar_counts,
+            "unrecognized_subreddits": unrecognized,
+        },
+    }

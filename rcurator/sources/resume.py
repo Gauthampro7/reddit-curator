@@ -6,6 +6,7 @@ import importlib
 import io
 import os
 import re
+import shutil
 import subprocess
 import zlib
 from collections.abc import Iterable
@@ -17,6 +18,7 @@ from rcurator.sources.types import SignalEvidence
 from rcurator.sources.workspace import scrub_url_userinfo
 
 MAX_RESUME_BYTES = 15 * 1024 * 1024  # 15 MB cap
+MAX_BFRANGE_ENTRIES = 4096
 SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".md", ".markdown", ".txt", ".tex"})
 
 SECTION_MULTIPLIERS: dict[str, float] = {
@@ -94,6 +96,7 @@ _PII_LABEL_LINE_RE = re.compile(
 
 # LaTeX light cleanup regexes
 _TEX_COMMENT_RE = re.compile(r"(?<!\\)%.*$", re.MULTILINE)
+_TEX_ENV_RE = re.compile(r"\\(?:begin|end)\*?\{[^}]*\}(?:\[[^\]]*\])?")
 _TEX_SECTION_RE = re.compile(r"\\(?:section|subsection|subsubsection)\*?\{([^}]*)\}")
 _TEX_HREF_RE = re.compile(r"\\href\{[^}]*\}\{([^}]*)\}")
 _TEX_CMD_ARG_RE = re.compile(r"\\[a-zA-Z]+\*?\{([^}]*)\}")
@@ -126,6 +129,7 @@ def scrub_pii(text: str) -> str:
 
 def _strip_latex(text: str) -> str:
     text = _TEX_COMMENT_RE.sub("", text)
+    text = _TEX_ENV_RE.sub(" ", text)
     text = _TEX_SECTION_RE.sub(r"\n\1\n", text)
     text = _TEX_HREF_RE.sub(r"\1", text)
     for _ in range(3):
@@ -422,7 +426,7 @@ def _parse_tounicode_cmap(cmap_bytes: bytes) -> dict[tuple[int, int], str]:
             start_code = int(start_clean, 16)
             end_code = int(end_clean, 16)
             dsts = re.findall(r"<([0-9A-Fa-f\s]+)>", arr_body)
-            for idx, dst_hex in enumerate(dsts):
+            for idx, dst_hex in enumerate(dsts[:MAX_BFRANGE_ENTRIES]):
                 code = start_code + idx
                 if code > end_code:
                     break
@@ -440,9 +444,12 @@ def _parse_tounicode_cmap(cmap_bytes: bytes) -> dict[tuple[int, int], str]:
             byte_len = max(1, (len(start_clean) + 1) // 2)
             start_code = int(start_clean, 16)
             end_code = int(end_clean, 16)
+            if end_code < start_code:
+                continue
             dst_val = int(dst_clean, 16)
             dst_hex_len = max(4, len(dst_clean) + (len(dst_clean) % 2))
-            for offset in range(end_code - start_code + 1):
+            span = min(end_code - start_code + 1, MAX_BFRANGE_ENTRIES)
+            for offset in range(span):
                 cur_hex = f"{dst_val + offset:0{dst_hex_len}x}"
                 table[(start_code + offset, byte_len)] = _decode_utf16be_hex(cur_hex)
 
@@ -828,11 +835,7 @@ class ResumeParser:
         return "\n".join(p.strip() for p in pages if p.strip())
 
     def _extract_pdf_text(self, data: bytes) -> str:
-        """3-tier PDF extraction: (a) optional pypdf, (b) /usr/bin/pdftotext, (c) pure-Python."""
-        _, has_encrypt = _parse_pdf_objects(data)
-        if has_encrypt:
-            raise EncryptedPDFError("Encrypted PDF files cannot be parsed")
-
+        """3-tier PDF extraction: (a) optional pypdf, (b) pdftotext, (c) pure-Python."""
         # Tier (a): optional pypdf
         try:
             pypdf = importlib.import_module("pypdf")
@@ -850,9 +853,9 @@ class ResumeParser:
         except Exception:
             pass
 
-        # Tier (b): native /usr/bin/pdftotext (zero temp files)
-        pdftotext_bin = "/usr/bin/pdftotext"
-        if os.path.isfile(pdftotext_bin) and os.access(pdftotext_bin, os.X_OK):
+        # Tier (b): native pdftotext via PATH or /usr/bin/pdftotext (zero temp files)
+        pdftotext_bin = shutil.which("pdftotext") or "/usr/bin/pdftotext"
+        if pdftotext_bin and os.path.isfile(pdftotext_bin) and os.access(pdftotext_bin, os.X_OK):
             try:
                 proc = subprocess.run(
                     [pdftotext_bin, "-layout", "-enc", "UTF-8", "-", "-"],

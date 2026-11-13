@@ -52,24 +52,9 @@
   ],
   "domain_priming_subreddits": [
     {
-      "name": "typescript",
-      "category": "domain_priming",
-      "description": "Type-safe JavaScript architecture, advanced type-level programming, and runtime schemas."
-    },
-    {
-      "name": "css",
-      "category": "domain_priming",
-      "description": "Modern CSS layout engines, container queries, cascade layers, and zero-JS animations."
-    },
-    {
       "name": "Frontend",
       "category": "domain_priming",
       "description": "Browser architecture, rendering performance, Core Web Vitals, and frontend craft."
-    },
-    {
-      "name": "reactjs",
-      "category": "domain_priming",
-      "description": "React component architecture, Server Components, state management, and rendering perf."
     },
     {
       "name": "sveltejs",
@@ -85,11 +70,6 @@
       "name": "a11y",
       "category": "domain_priming",
       "description": "Web accessibility engineering, WCAG compliance, ARIA patterns, and screen-reader UX."
-    },
-    {
-      "name": "UI_Design",
-      "category": "domain_priming",
-      "description": "Digital interface aesthetics, layout grids, dark-mode contrast, and component craft."
     },
     {
       "name": "userexperience",

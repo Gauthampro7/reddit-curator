@@ -5,8 +5,10 @@
 
   const state = {
     csrfToken: "",
+    uiMode: "easy",
     status: null,
     presets: [],
+    activePresetId: null,
     activeManifest: null,
     excludedSubs: new Set(),
     resumeEvidences: [],
@@ -167,13 +169,44 @@
     return clone;
   }
 
-  function setActiveManifest(manifest, resetExcluded = true) {
+  function setUiMode(mode) {
+    const normalized = mode === "advanced" ? "advanced" : "easy";
+    state.uiMode = normalized;
+    document.body.classList.toggle("mode-easy", normalized === "easy");
+    document.body.classList.toggle("mode-advanced", normalized === "advanced");
+
+    const easyBtn = document.getElementById("btn-mode-easy");
+    const advBtn = document.getElementById("btn-mode-advanced");
+    if (easyBtn && advBtn) {
+      easyBtn.classList.toggle("active", normalized === "easy");
+      easyBtn.setAttribute("aria-pressed", normalized === "easy" ? "true" : "false");
+      advBtn.classList.toggle("active", normalized === "advanced");
+      advBtn.setAttribute("aria-pressed", normalized === "advanced" ? "true" : "false");
+    }
+    try {
+      localStorage.setItem("rcurator.uiMode", normalized);
+    } catch (_) {
+      // ignore storage restrictions
+    }
+  }
+
+  function setActiveManifest(manifest, resetExcluded = true, presetId = null) {
     state.activeManifest = manifest;
+    state.activePresetId = presetId || (manifest && manifest.preset_id) || null;
     if (resetExcluded) {
       state.excludedSubs.clear();
     }
     updateActiveBar();
+    updateEasySelectedBadge();
+    renderEasyPresets();
     renderInspector();
+  }
+
+  function updateEasySelectedBadge() {
+    const badge = document.getElementById("easy-selected-badge");
+    if (!badge) return;
+    const m = getEffectiveManifest();
+    badge.textContent = m ? `Selected: ${m.name || "Custom JSON"}` : "No preset selected";
   }
 
   function updateActiveBar() {
@@ -281,6 +314,8 @@
       if (cdpBadge) {
         cdpBadge.textContent = `Port ${status.cdp_port || cdpPort}`;
       }
+
+      updateEasyConnectionStatus(status);
 
       const browserSelect = document.getElementById("select-browser");
       if (browserSelect && Array.isArray(status.browsers)) {
@@ -712,11 +747,115 @@
     }
   }
 
+  function updateEasyConnectionStatus(status) {
+    const badge = document.getElementById("easy-browser-badge");
+    const msg = document.getElementById("easy-browser-status");
+    if (!badge || !msg) return;
+    if (status && status.authenticated && status.username) {
+      badge.textContent = `Connected as u/${status.username}`;
+      badge.className = "status-pill status-ok";
+      msg.textContent = "Your Reddit account is connected and ready to update.";
+    } else if (status && status.cdp_connected) {
+      badge.textContent = "Browser open (sign in needed)";
+      badge.className = "status-pill status-info";
+      msg.textContent = "Browser is open. Sign in to Reddit in that window, then click Check Connection.";
+    } else {
+      badge.textContent = "Not connected";
+      badge.className = "status-pill status-off";
+      msg.textContent = "Launch the browser window, log in to your Reddit account once, then click Check Connection.";
+    }
+  }
+
+  function renderEasyPresets() {
+    const grid = document.getElementById("easy-preset-grid");
+    if (!grid) return;
+    clearNode(grid);
+    const searchEl = document.getElementById("easy-preset-search");
+    const q = ((searchEl && searchEl.value) || "").trim().toLowerCase();
+    const list = state.presets.filter((p) => {
+      if (!q) return true;
+      return `${p.id} ${p.name} ${p.description}`.toLowerCase().includes(q);
+    });
+
+    for (const p of list) {
+      const isSelected = state.activePresetId === p.id;
+      const count = (p.anchor_count || 0) + (p.domain_priming_count || 0);
+      const card = el("button", {
+        type: "button",
+        class: `easy-preset-card${isSelected ? " selected" : ""}`,
+        onclick: () => loadSinglePreset(p.id),
+      }, [
+        el("div", { class: "preset-title", text: p.name }),
+        el("div", { class: "preset-desc", text: p.description || "" }),
+        el("div", { class: "meta-line", text: `${count} communities · ${p.custom_feeds_count || 0} topic feeds` }),
+      ]);
+      grid.appendChild(card);
+    }
+  }
+
+  async function handleEasyLaunch() {
+    const btn = document.getElementById("easy-btn-launch");
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Opening Browser...";
+    try {
+      await apiPost("/api/launch-browser", { port: getCdpPort(), browser: null });
+      showToast("Reddit browser opened");
+      await refreshStatus();
+    } catch (err) {
+      showToast(`Could not open browser: ${err.message}`, "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  }
+
+  async function handleEasyApply() {
+    const m = getEffectiveManifest();
+    if (!m) {
+      showToast("Pick a preset or open a custom JSON file first.", "err");
+      return;
+    }
+    const btn = document.getElementById("easy-btn-apply");
+    const banner = document.getElementById("easy-apply-result");
+    btn.disabled = true;
+    btn.textContent = "Applying...";
+    banner.className = "easy-banner hidden";
+    banner.textContent = "";
+    try {
+      const res = await apiPost("/api/sync", {
+        manifest: m,
+        dry_run: false,
+        prune: false,
+        keep: [],
+        cdp_port: getCdpPort(),
+      });
+      const sync = res.sync || {};
+      const subInfo = sync.subscriptions || {};
+      const added = (subInfo.subscribed || []).length;
+      const already = (subInfo.already_subscribed || []).length;
+      const feedsCount = Object.keys(sync.custom_feeds || {}).length;
+      banner.className = "easy-banner";
+      banner.textContent = `Done! Connected as u/${sync.username || "reddit"}: ${added} new communities followed (${already} already followed), ${feedsCount} custom feed(s) updated, and your Reddit home feed is now set to Following.`;
+      showToast("Reddit feed updated!");
+      await refreshStatus();
+      await loadSnapshots();
+    } catch (err) {
+      banner.className = "easy-banner err";
+      banner.textContent = `Could not apply yet: ${err.message}. Make sure you clicked "Open Reddit Browser" and signed in to Reddit.`;
+      showToast(`Apply failed: ${err.message}`, "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Apply to My Reddit";
+    }
+  }
+
   // --- Preset Gallery & Mixer ---
   async function loadPresets() {
     try {
       const res = await apiGet("/api/presets");
       state.presets = res.presets || [];
+      renderEasyPresets();
       renderPresetGallery();
       populateMixerSelect();
     } catch (err) {
@@ -770,7 +909,7 @@
   async function loadSinglePreset(presetId) {
     try {
       const manifest = await apiGet(`/api/presets/${encodeURIComponent(presetId)}`);
-      setActiveManifest(manifest, true);
+      setActiveManifest(manifest, true, presetId);
       showToast(`Loaded preset: ${manifest.name || presetId}`);
       await auditActiveManifest();
     } catch (err) {
@@ -1214,11 +1353,20 @@
       });
     });
 
+    document.getElementById("btn-mode-easy").addEventListener("click", () => setUiMode("easy"));
+    document.getElementById("btn-mode-advanced").addEventListener("click", () => setUiMode("advanced"));
+
     const importInput = document.getElementById("import-manifest-input");
-    document.getElementById("btn-import-manifest").addEventListener("click", () => {
+    const triggerImport = () => {
       importInput.value = "";
       importInput.click();
-    });
+    };
+    document.getElementById("btn-import-manifest").addEventListener("click", triggerImport);
+    document.getElementById("easy-btn-import-json").addEventListener("click", triggerImport);
+    document.getElementById("easy-preset-search").addEventListener("input", renderEasyPresets);
+    document.getElementById("easy-btn-launch").addEventListener("click", handleEasyLaunch);
+    document.getElementById("easy-btn-check").addEventListener("click", refreshStatus);
+    document.getElementById("easy-btn-apply").addEventListener("click", handleEasyApply);
     importInput.addEventListener("change", () => {
       if (importInput.files && importInput.files[0]) {
         handleImportManifestFile(importInput.files[0]);
@@ -1280,6 +1428,15 @@
   }
 
   async function init() {
+    let savedMode = "easy";
+    try {
+      if (localStorage.getItem("rcurator.uiMode") === "advanced") {
+        savedMode = "advanced";
+      }
+    } catch (_) {
+      savedMode = "easy";
+    }
+    setUiMode(savedMode);
     setupRatioSliders();
     setupResumeDropzone();
     setupEvents();

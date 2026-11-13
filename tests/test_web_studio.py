@@ -598,6 +598,14 @@ class TestWebStudioServer(unittest.TestCase):
         self.assertIn("btn-import-manifest", index_html)
         self.assertIn("import-manifest-input", index_html)
         self.assertIn("/api/import-manifest", app_js)
+        self.assertIn('class="mode-easy"', index_html)
+        self.assertIn("btn-mode-easy", index_html)
+        self.assertIn("btn-mode-advanced", index_html)
+        self.assertIn("view-easy", index_html)
+        self.assertIn("easy-btn-launch", index_html)
+        self.assertIn("easy-btn-apply", index_html)
+        self.assertIn("easy-btn-import-json", index_html)
+        self.assertIn("setUiMode", app_js)
 
         for asset_name, text in (("index.html", index_html), ("styles.css", styles_css), ("app.js", app_js)):
             scrubbed = text.replace("http://www.w3.org/2000/svg", "")

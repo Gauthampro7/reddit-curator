@@ -851,3 +851,113 @@ th {
 
 .toast.toast-ok { border-color: rgba(52, 211, 153, 0.6); }
 .toast.toast-err { border-color: rgba(251, 113, 133, 0.7); }
+
+/* --- Easy vs Advanced Mode --- */
+.mode-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border-bright);
+  background: var(--bg-input);
+  gap: 2px;
+}
+
+.mode-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.mode-btn.active {
+  background: linear-gradient(135deg, #0284c7, #0d9488);
+  color: #ffffff;
+}
+
+body.mode-easy .adv-only,
+body.mode-easy .view {
+  display: none !important;
+}
+
+body.mode-advanced #view-easy {
+  display: none !important;
+}
+
+.easy-shell {
+  padding-top: 6px;
+}
+
+.easy-step-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.easy-step-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0284c7, #0d9488);
+}
+
+.easy-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.easy-preset-card {
+  appearance: none;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.easy-preset-card:hover {
+  border-color: var(--border-bright);
+}
+
+.easy-preset-card.selected {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.14), rgba(13, 148, 136, 0.08));
+}
+
+.easy-banner {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  background: rgba(52, 211, 153, 0.08);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.easy-banner.err {
+  border-color: rgba(251, 113, 133, 0.55);
+  background: rgba(251, 113, 133, 0.1);
+}

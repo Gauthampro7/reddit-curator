@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
 </head>
-<body>
+<body class="mode-easy">
   <div class="bg-grid" aria-hidden="true"></div>
 
   <header class="topbar">
@@ -20,21 +20,25 @@
       </div>
       <div>
         <div class="brand-title">reddit-curator <span class="badge badge-accent">studio v2.0</span></div>
-        <div class="brand-sub">Deterministic Cognitive Diet &amp; Graph Curation Workbench</div>
+        <div class="brand-sub">Smart Reddit Feed Organizer</div>
       </div>
     </div>
 
     <div class="status-cluster">
-      <span id="pill-cdp" class="status-pill status-off">CDP: offline</span>
+      <div class="mode-switch" role="group" aria-label="Interface mode">
+        <button id="btn-mode-easy" type="button" class="mode-btn active" aria-pressed="true">Easy</button>
+        <button id="btn-mode-advanced" type="button" class="mode-btn" aria-pressed="false">Advanced</button>
+      </div>
+      <span id="pill-cdp" class="status-pill status-off adv-only">CDP: offline</span>
       <span id="pill-auth" class="status-pill status-off">Reddit: disconnected</span>
-      <span id="pill-ontology" class="status-pill status-info">Ontology: --</span>
+      <span id="pill-ontology" class="status-pill status-info adv-only">Ontology: --</span>
       <input id="import-manifest-input" type="file" accept=".json,application/json" hidden>
-      <button id="btn-import-manifest" type="button" class="btn btn-secondary btn-sm" title="Open custom preset or manifest JSON (Ctrl+O)">Open JSON</button>
-      <button id="btn-export-manifest" type="button" class="btn btn-secondary btn-sm" title="Download active manifest.json (Ctrl+E)">Export JSON</button>
+      <button id="btn-import-manifest" type="button" class="btn btn-secondary btn-sm adv-only" title="Open custom preset or manifest JSON (Ctrl+O)">Open JSON</button>
+      <button id="btn-export-manifest" type="button" class="btn btn-secondary btn-sm adv-only" title="Download active manifest.json (Ctrl+E)">Export JSON</button>
     </div>
   </header>
 
-  <div class="active-bar">
+  <div class="active-bar adv-only">
     <div class="active-bar-left">
       <span class="mono-label">ACTIVE MANIFEST</span>
       <strong id="active-manifest-name">No manifest loaded</strong>
@@ -47,7 +51,7 @@
     </div>
   </div>
 
-  <nav class="tabbar" role="tablist" aria-label="Studio Views">
+  <nav class="tabbar adv-only" role="tablist" aria-label="Studio Views">
     <button class="tab-btn active" role="tab" aria-selected="true" data-tab="lab">
       <span class="tab-key">1</span> Auto-Curate Lab
     </button>
@@ -66,6 +70,58 @@
   </nav>
 
   <main class="studio-main">
+    <!-- EASY MODE (DEFAULT) -->
+    <section id="view-easy" class="easy-shell" aria-label="Easy Setup">
+      <article class="panel easy-step">
+        <div class="panel-head">
+          <div class="easy-step-title">
+            <span class="easy-step-num">1</span>
+            <h2>Choose Your Interests</h2>
+          </div>
+          <div class="action-row-tight">
+            <span id="easy-selected-badge" class="badge badge-accent">No preset selected</span>
+            <button id="easy-btn-import-json" type="button" class="btn btn-secondary btn-sm">Open Custom JSON</button>
+          </div>
+        </div>
+        <p class="panel-desc">Pick a ready-made topic pack below, or open your own custom JSON file.</p>
+        <div class="toolbar">
+          <input id="easy-preset-search" class="input input-sm" type="search" placeholder="Search topic packs...">
+        </div>
+        <div id="easy-preset-grid" class="easy-preset-grid"></div>
+      </article>
+
+      <div class="grid-2 mt-gap">
+        <article class="panel easy-step">
+          <div class="panel-head">
+            <div class="easy-step-title">
+              <span class="easy-step-num">2</span>
+              <h2>Open &amp; Sign In to Reddit</h2>
+            </div>
+            <span id="easy-browser-badge" class="status-pill status-off">Not connected</span>
+          </div>
+          <p id="easy-browser-status" class="panel-desc">Launch the browser window, log in to your Reddit account once, then click Check Connection.</p>
+          <div class="action-row">
+            <button id="easy-btn-launch" type="button" class="btn btn-primary">Open Reddit Browser</button>
+            <button id="easy-btn-check" type="button" class="btn btn-secondary">Check Connection</button>
+          </div>
+        </article>
+
+        <article class="panel easy-step">
+          <div class="panel-head">
+            <div class="easy-step-title">
+              <span class="easy-step-num">3</span>
+              <h2>Apply to Your Account</h2>
+            </div>
+          </div>
+          <p class="panel-desc">Follows your chosen communities, creates topic feeds, and switches your home feed to Following.</p>
+          <div class="action-row">
+            <button id="easy-btn-apply" type="button" class="btn btn-primary btn-lg">Apply to My Reddit</button>
+          </div>
+          <div id="easy-apply-result" class="easy-banner hidden"></div>
+        </article>
+      </div>
+    </section>
+
     <!-- VIEW 1: AUTO-CURATE LAB -->
     <section id="view-lab" class="view active" aria-label="Auto-Curate Lab">
       <div class="grid-2">

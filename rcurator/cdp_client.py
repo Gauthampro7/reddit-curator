@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 import requests
 import websockets
+from websockets.exceptions import WebSocketException
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _USER_AGENT = "linux:reddit-curator:2.0.0 (by /u/reddit-curator)"
@@ -102,19 +103,24 @@ class CDPClient:
         self._ws: Any = None
 
     async def __aenter__(self) -> CDPClient:
-        self._ws = await websockets.connect(
-            self.ws_url,
-            origin=None,
-            max_size=16_777_216,
-            open_timeout=5.0,
-            close_timeout=2.0,
-        )
+        try:
+            self._ws = await websockets.connect(
+                self.ws_url,
+                origin=None,
+                max_size=16_777_216,
+                open_timeout=5.0,
+                close_timeout=2.0,
+            )
+        except (WebSocketException, OSError, TimeoutError) as exc:
+            raise CDPError(f"Failed to connect to CDP WebSocket {self.ws_url}: {exc}") from exc
         return self
 
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         if self._ws is not None:
             try:
                 await self._ws.close()
+            except (WebSocketException, OSError):
+                pass
             finally:
                 self._ws = None
 
@@ -132,7 +138,10 @@ class CDPClient:
 
         cmd_id = next(self._id_counter)
         payload = {"id": cmd_id, "method": method, "params": params or {}}
-        await self._ws.send(json.dumps(payload))
+        try:
+            await self._ws.send(json.dumps(payload))
+        except (WebSocketException, OSError) as exc:
+            raise CDPError(f"CDP WebSocket send failed for {method}: {exc}") from exc
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
@@ -140,8 +149,16 @@ class CDPClient:
             remaining = deadline - loop.time()
             if remaining <= 0:
                 raise asyncio.TimeoutError(f"Timed out waiting for CDP response to {method} (id={cmd_id}).")
-            raw = await asyncio.wait_for(self._ws.recv(), timeout=remaining)
-            msg = json.loads(raw)
+            try:
+                raw = await asyncio.wait_for(self._ws.recv(), timeout=remaining)
+            except (TimeoutError, asyncio.TimeoutError):
+                raise
+            except (WebSocketException, OSError) as exc:
+                raise CDPError(f"CDP WebSocket receive failed for {method}: {exc}") from exc
+            try:
+                msg = json.loads(raw)
+            except (ValueError, TypeError) as exc:
+                raise CDPError(f"Malformed JSON frame received from CDP for {method}: {exc}") from exc
             if not isinstance(msg, dict):
                 continue
             if msg.get("id") != cmd_id:
@@ -235,8 +252,11 @@ def _is_reddit_cookie_domain(domain: str) -> bool:
     return clean == "reddit.com" or clean.endswith(".reddit.com")
 
 
-async def _extract_token_from_tab(cdp: CDPClient) -> str | None:
-    """Extract OAuth access token from localStorage chat:access-token or token_v2 cookie."""
+async def _extract_token_candidates_from_tab(cdp: CDPClient) -> list[str]:
+    """Extract ordered OAuth token candidates: (localStorage chat:access-token, token_v2 cookie)."""
+    candidates: list[str] = []
+    seen: set[str] = set()
+
     token_expr = (
         "(() => { try {"
         " const raw = localStorage.getItem('chat:access-token');"
@@ -246,8 +266,11 @@ async def _extract_token_from_tab(cdp: CDPClient) -> str | None:
         "} catch (e) { return null; } })()"
     )
     token = await _eval_js(cdp, token_expr)
-    if isinstance(token, str) and token.strip():
-        return token.strip()
+    if isinstance(token, str):
+        clean_ls = token.strip()
+        if clean_ls and clean_ls not in seen:
+            seen.add(clean_ls)
+            candidates.append(clean_ls)
 
     try:
         cookie_res = await cdp.send("Network.getCookies", {"urls": ["https://www.reddit.com"]})
@@ -261,13 +284,25 @@ async def _extract_token_from_tab(cdp: CDPClient) -> str | None:
                 continue
             if cookie.get("name") == "token_v2" and _is_reddit_cookie_domain(str(cookie.get("domain", ""))):
                 val = str(cookie.get("value") or "").strip()
-                if val:
-                    return val
-    return None
+                if val and val not in seen:
+                    seen.add(val)
+                    candidates.append(val)
+    return candidates
+
+
+async def _extract_token_from_tab(cdp: CDPClient) -> str | None:
+    """Extract primary OAuth access token from localStorage chat:access-token or token_v2 cookie."""
+    candidates = await _extract_token_candidates_from_tab(cdp)
+    return candidates[0] if candidates else None
 
 
 def _validate_reddit_token(access_token: str) -> str | None:
-    """Validate token against /api/v1/me?raw_json=1 and return username if valid."""
+    """Validate token against /api/v1/me?raw_json=1 and return username if valid.
+
+    Returns None on HTTP auth rejection (401/403 or other non-200 status), and raises
+    CDPError on network transport failures so callers do not misdiagnose offline errors
+    as missing Reddit login.
+    """
     try:
         resp = requests.get(
             _REDDIT_ME_URL,
@@ -277,9 +312,11 @@ def _validate_reddit_token(access_token: str) -> str | None:
             },
             timeout=10.0,
         )
-    except requests.RequestException:
-        return None
-    if resp.status_code != 200:
+    except requests.RequestException as exc:
+        raise CDPError(
+            f"Network error contacting oauth.reddit.com to validate Reddit token: {exc}"
+        ) from exc
+    if resp.status_code in (401, 403) or resp.status_code != 200:
         return None
     try:
         data = resp.json()
@@ -320,8 +357,7 @@ async def _acquire_reddit_session_async(cdp_port: int) -> RedditSessionData:
         if created_new:
             await _await_document_complete(cdp, timeout=10.0, poll_interval=0.4)
 
-        token = await _extract_token_from_tab(cdp)
-        if token:
+        for token in await _extract_token_candidates_from_tab(cdp):
             username = await asyncio.to_thread(_validate_reddit_token, token)
             if username:
                 return RedditSessionData(
@@ -331,7 +367,7 @@ async def _acquire_reddit_session_async(cdp_port: int) -> RedditSessionData:
                     ws_url=ws_url,
                 )
 
-        # Missing or expired token: reload page and poll readiness + token every 400ms up to 10s.
+        # Missing or expired token: reload page and poll readiness + token candidates every 400ms up to 10s.
         await cdp.send("Page.reload", {"ignoreCache": False})
         deadline = time.monotonic() + 10.0
         while time.monotonic() < deadline:
@@ -343,17 +379,15 @@ async def _acquire_reddit_session_async(cdp_port: int) -> RedditSessionData:
             if ready_state != "complete":
                 continue
 
-            token = await _extract_token_from_tab(cdp)
-            if not token:
-                continue
-            username = await asyncio.to_thread(_validate_reddit_token, token)
-            if username:
-                return RedditSessionData(
-                    username=username,
-                    access_token=token,
-                    target_id=target_id,
-                    ws_url=ws_url,
-                )
+            for token in await _extract_token_candidates_from_tab(cdp):
+                username = await asyncio.to_thread(_validate_reddit_token, token)
+                if username:
+                    return RedditSessionData(
+                        username=username,
+                        access_token=token,
+                        target_id=target_id,
+                        ws_url=ws_url,
+                    )
 
     raise CDPError(
         "Could not acquire a valid Reddit OAuth session from Chrome CDP within 10s. "
@@ -445,7 +479,15 @@ async def _activate_following_feed_async(ws_url: str) -> dict[str, Any]:
                 }
 
             ready = await _await_document_complete(cdp, timeout=10.0, poll_interval=0.25)
-            walker_res = await _eval_js(cdp, _SHADOW_WALKER_JS, timeout=10.0)
+            walker_res: Any = None
+            hydration_deadline = time.monotonic() + 3.0
+            while True:
+                walker_res = await _eval_js(cdp, _SHADOW_WALKER_JS, timeout=10.0)
+                if isinstance(walker_res, dict) and walker_res.get("matched"):
+                    break
+                if time.monotonic() >= hydration_deadline:
+                    break
+                await asyncio.sleep(0.25)
             elapsed_ms = int((time.monotonic() - start) * 1000)
 
             if isinstance(walker_res, dict) and walker_res.get("matched"):
@@ -471,7 +513,7 @@ async def _activate_following_feed_async(ws_url: str) -> dict[str, Any]:
                 "message": "Following feed tab was not located and URL navigation did not settle.",
                 "elapsed_ms": elapsed_ms,
             }
-    except (CDPError, TimeoutError, asyncio.TimeoutError, OSError) as exc:
+    except (CDPError, TimeoutError, asyncio.TimeoutError, OSError, WebSocketException) as exc:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return {
             "success": False,

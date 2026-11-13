@@ -20,6 +20,10 @@ from rcurator.studio.server import (
     StudioHTTPError,
     _validate_cdp_port,
     create_studio_server,
+    parse_multipart_upload,
+    validate_host_header,
+    validate_origin_header,
+    validate_workspace_path,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -134,10 +138,12 @@ class MockStudioBackend(DefaultStudioBackend):
         self,
         weights: dict[str, float],
         target_ratio: tuple[int, int, int] = (40, 35, 25),
+        tier1_count: int = 18,
     ) -> dict[str, Any]:
         first = next(iter(weights.keys()))
         manifest = self.get_preset(first)
         manifest["name"] = f"Mixed: {' + '.join(weights.keys())}"
+        manifest["tier1_count_echo"] = tier1_count
         return {"manifest": manifest}
 
     def import_manifest(
@@ -781,6 +787,517 @@ class TestWebStudioServer(unittest.TestCase):
         self.assertGreater(imported["audit"]["composite_health_score"], 0)
         with self.assertRaises(StudioHTTPError):
             real_backend.import_manifest({"name": "empty"})
+
+
+class TestWebStudioHardeningAndBackend(unittest.TestCase):
+    """Unmocked DefaultStudioBackend and HTTP hardening tests for Slice 3."""
+
+    def _start_server(self, backend: Any, host: str = "127.0.0.1") -> tuple[Any, threading.Thread]:
+        server = create_studio_server(host=host, port=0, backend=backend)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return server, thread
+
+    def _http_json(
+        self,
+        port: int,
+        method: str,
+        path: str,
+        csrf: str,
+        *,
+        raw_body: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        host: str = "127.0.0.1",
+    ) -> tuple[int, dict[str, Any]]:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        req_headers = {
+            "Host": f"[{host}]:{port}" if ":" in host else f"{host}:{port}",
+            "X-Curator-Token": csrf,
+            "Content-Type": "application/json",
+        }
+        if headers:
+            req_headers.update(headers)
+        conn.request(method, path, body=raw_body, headers=req_headers)
+        resp = conn.getresponse()
+        data = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return resp.status, data
+
+    def test_http_exception_mapping_no_tracebacks(self) -> None:
+        from rcurator.cdp_client import CDPError
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            real_backend = DefaultStudioBackend(project_root=REPO_ROOT, snapshots_dir=Path(tmpdir))
+            server, _ = self._start_server(real_backend)
+            try:
+                port = server.server_port
+                csrf = server.csrf_token
+
+                # ValueError -> 400 (invalid GitHub username in /api/generate)
+                st_val, body_val = self._http_json(
+                    port,
+                    "POST",
+                    "/api/generate",
+                    csrf,
+                    raw_body=json.dumps({"github_username": "invalid user name!"}).encode("utf-8"),
+                )
+                self.assertEqual(st_val, 400)
+                self.assertIn("Invalid GitHub username", body_val["error"])
+                self.assertNotIn("Traceback", body_val["error"])
+
+                # FileNotFoundError -> 404 (missing snapshot in /api/rollback)
+                with patch(
+                    "rcurator.cdp_client.acquire_reddit_session",
+                    return_value=type("Sess", (), {"access_token": "t", "username": "u", "ws_url": "ws://127.0.0.1:9222/1"})(),
+                ):
+                    st_fnf, body_fnf = self._http_json(
+                        port,
+                        "POST",
+                        "/api/rollback",
+                        csrf,
+                        raw_body=json.dumps({"snapshot_id": "nonexistent_snap_123"}).encode("utf-8"),
+                    )
+                self.assertEqual(st_fnf, 404)
+                self.assertNotIn("Traceback", body_fnf["error"])
+
+                # CDPError -> 503 with actionable browser/login guidance
+                with patch("rcurator.cdp_client.acquire_reddit_session", side_effect=CDPError("CDP port closed")):
+                    st_cdp, body_cdp = self._http_json(
+                        port,
+                        "POST",
+                        "/api/sync",
+                        csrf,
+                        raw_body=json.dumps(
+                            {"manifest": {"anchor_subreddits": ["unixporn"]}, "dry_run": False}
+                        ).encode("utf-8"),
+                    )
+                self.assertEqual(st_cdp, 503)
+                self.assertIn("logged into", body_cdp["error"].lower())
+                self.assertNotIn("Traceback", body_cdp["error"])
+
+                # ConnectionError -> 503 with actionable guidance
+                with patch("rcurator.cdp_client.acquire_reddit_session", side_effect=ConnectionRefusedError("refused")):
+                    st_conn, body_conn = self._http_json(
+                        port,
+                        "POST",
+                        "/api/diff",
+                        csrf,
+                        raw_body=json.dumps({"manifest": {"anchor_subreddits": ["unixporn"]}}).encode("utf-8"),
+                    )
+                self.assertEqual(st_conn, 503)
+                self.assertIn("launch", body_conn["error"].lower())
+                self.assertNotIn("Traceback", body_conn["error"])
+
+                # TimeoutError -> 504
+                with patch("rcurator.browser.BrowserLauncher.launch", side_effect=TimeoutError("Timed out waiting for CDP")):
+                    st_to, body_to = self._http_json(
+                        port,
+                        "POST",
+                        "/api/launch-browser",
+                        csrf,
+                        raw_body=json.dumps({"port": 9222}).encode("utf-8"),
+                    )
+                self.assertEqual(st_to, 504)
+                self.assertIn("Timed out", body_to["error"])
+                self.assertNotIn("Traceback", body_to["error"])
+
+                # RuntimeError -> 503
+                with patch("rcurator.browser.BrowserLauncher.launch", side_effect=RuntimeError("Browser crashed")):
+                    st_rt, body_rt = self._http_json(
+                        port,
+                        "POST",
+                        "/api/launch-browser",
+                        csrf,
+                        raw_body=json.dumps({"port": 9222}).encode("utf-8"),
+                    )
+                self.assertEqual(st_rt, 503)
+                self.assertIn("Browser crashed", body_rt["error"])
+                self.assertNotIn("Traceback", body_rt["error"])
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_malformed_json_400_and_missing_content_length_411(self) -> None:
+        real_backend = DefaultStudioBackend(project_root=REPO_ROOT)
+        server, _ = self._start_server(real_backend)
+        try:
+            port = server.server_port
+            csrf = server.csrf_token
+
+            # Malformed JSON -> 400
+            st_bad, body_bad = self._http_json(port, "POST", "/api/audit", csrf, raw_body=b"{not-valid-json")
+            self.assertEqual(st_bad, 400)
+            self.assertIn("Invalid JSON", body_bad["error"])
+
+            # Non-object JSON -> 400
+            st_arr, body_arr = self._http_json(port, "POST", "/api/audit", csrf, raw_body=b"[1, 2, 3]")
+            self.assertEqual(st_arr, 400)
+            self.assertIn("must be an object", body_arr["error"])
+
+            # Chunked POST without Content-Length -> 411
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+                req = (
+                    f"POST /api/audit HTTP/1.1\r\n"
+                    f"Host: 127.0.0.1:{port}\r\n"
+                    f"X-Curator-Token: {csrf}\r\n"
+                    f"Content-Type: application/json\r\n"
+                    f"Transfer-Encoding: chunked\r\n"
+                    f"Connection: close\r\n\r\n"
+                    f"2\r\n{{}}\r\n0\r\n\r\n"
+                ).encode("ascii")
+                sock.sendall(req)
+                resp_chunked = sock.recv(4096).decode("utf-8", errors="replace")
+            self.assertTrue(resp_chunked.startswith("HTTP/1.1 411"), resp_chunked.splitlines()[0])
+
+            # POST completely missing Content-Length -> 411
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+                req = (
+                    f"POST /api/audit HTTP/1.1\r\n"
+                    f"Host: 127.0.0.1:{port}\r\n"
+                    f"X-Curator-Token: {csrf}\r\n"
+                    f"Content-Type: application/json\r\n"
+                    f"Connection: close\r\n\r\n"
+                ).encode("ascii")
+                sock.sendall(req)
+                resp_missing_len = sock.recv(4096).decode("utf-8", errors="replace")
+            self.assertTrue(resp_missing_len.startswith("HTTP/1.1 411"), resp_missing_len.splitlines()[0])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_ipv6_loopback_host_origin_and_server_bind(self) -> None:
+        self.assertTrue(validate_host_header("[::1]"))
+        self.assertTrue(validate_host_header("[::1]:8420"))
+        self.assertFalse(validate_host_header("[::2]:8420"))
+        self.assertFalse(validate_host_header("[::1]:99999"))
+        self.assertTrue(validate_origin_header("http://[::1]:8420"))
+        self.assertTrue(validate_origin_header("https://[::1]"))
+        self.assertFalse(validate_origin_header("http://[::2]:8420"))
+
+        if not socket.has_ipv6:
+            return
+        real_backend = DefaultStudioBackend(project_root=REPO_ROOT)
+        try:
+            server, _ = self._start_server(real_backend, host="::1")
+        except OSError:
+            return
+        try:
+            port = server.server_port
+            csrf = server.csrf_token
+            conn = http.client.HTTPConnection("::1", port, timeout=5)
+            conn.request("GET", "/api/status", headers={"Host": f"[::1]:{port}"})
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            status_data = json.loads(resp.read().decode("utf-8"))
+            self.assertEqual(status_data["host"], "::1")
+            conn.close()
+
+            st_post, post_data = self._http_json(
+                port,
+                "POST",
+                "/api/audit",
+                csrf,
+                raw_body=json.dumps({"manifest": {"anchor_subreddits": ["unixporn"]}}).encode("utf-8"),
+                headers={"Origin": f"http://[::1]:{port}"},
+                host="::1",
+            )
+            self.assertEqual(st_post, 200)
+            self.assertIn("audit", post_data)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_var_home_silverblue_workspace_validation(self) -> None:
+        fake_home = Path("/var/home/silverblue_user")
+        fake_ws = fake_home / "projects" / "app"
+        fake_symlink_home_ws = Path("/home/silverblue_user/projects/app")
+        fake_evil_link = fake_home / "projects" / "evil_var_log"
+        orig_resolve = Path.resolve
+        orig_exists = Path.exists
+        orig_is_dir = Path.is_dir
+
+        def _patched_resolve(self_path: Path, strict: bool = False) -> Path:
+            if self_path in (fake_home, fake_ws, fake_symlink_home_ws):
+                return fake_ws if self_path != fake_home else fake_home
+            if self_path == fake_evil_link:
+                return Path("/var/log")
+            return orig_resolve(self_path, strict=strict)
+
+        def _patched_exists(self_path: Path) -> bool:
+            if self_path in (fake_home, fake_ws):
+                return True
+            return orig_exists(self_path)
+
+        def _patched_is_dir(self_path: Path) -> bool:
+            if self_path in (fake_home, fake_ws):
+                return True
+            return orig_is_dir(self_path)
+
+        with (
+            patch.dict(os.environ, {"HOME": str(fake_home)}),
+            patch.object(Path, "home", return_value=fake_home),
+            patch.object(Path, "resolve", _patched_resolve),
+            patch.object(Path, "exists", _patched_exists),
+            patch.object(Path, "is_dir", _patched_is_dir),
+        ):
+            resolved = validate_workspace_path(str(fake_ws))
+            self.assertEqual(resolved, fake_ws)
+
+            for blocked in (
+                "/var/log",
+                "/var/lib",
+                "/var",
+                "/etc",
+                str(fake_home / ".ssh"),
+                str(fake_home / ".config" / "reddit-curator"),
+                str(fake_evil_link),
+            ):
+                with self.assertRaises(StudioHTTPError, msg=f"Should block {blocked!r}") as ctx:
+                    validate_workspace_path(blocked)
+                self.assertEqual(ctx.exception.status, 403)
+
+    def test_multipart_rfc5987_and_unquoted_filenames(self) -> None:
+        boundary = "----BoundaryRFC5987"
+        mp_rfc5987 = (
+            f"--{boundary}\r\n"
+            f"Content-Disposition: form-data; name=\"file\"; filename=\"fallback.pdf\"; "
+            f"filename*=UTF-8''r%C3%A9sum%C3%A9%202026.pdf\r\n"
+            f"Content-Type: application/pdf\r\n\r\n"
+            f"%PDF-1.4\r\n"
+            f"--{boundary}--\r\n"
+        ).encode("utf-8")
+        fname_ext, data_ext = parse_multipart_upload(f"multipart/form-data; boundary={boundary}", mp_rfc5987)
+        self.assertEqual(fname_ext, "résumé 2026.pdf")
+        self.assertEqual(data_ext, b"%PDF-1.4")
+
+        mp_unquoted = (
+            f"--{boundary}\r\n"
+            f"Content-Disposition: form-data; name=file; filename=plain_cv.txt\r\n"
+            f"Content-Type: text/plain\r\n\r\n"
+            f"Rust Linux eBPF\r\n"
+            f"--{boundary}--\r\n"
+        ).encode("utf-8")
+        fname_unq, data_unq = parse_multipart_upload(f"multipart/form-data; boundary={boundary}", mp_unquoted)
+        self.assertEqual(fname_unq, "plain_cv.txt")
+        self.assertEqual(data_unq, b"Rust Linux eBPF")
+
+    def test_mix_presets_passes_tier1_count_and_validates(self) -> None:
+        real_backend = DefaultStudioBackend(project_root=REPO_ROOT)
+        server, _ = self._start_server(real_backend)
+        try:
+            port = server.server_port
+            csrf = server.csrf_token
+
+            st10, res10 = self._http_json(
+                port,
+                "POST",
+                "/api/mix",
+                csrf,
+                raw_body=json.dumps(
+                    {"weights": {"systems_engineering": 0.6, "rust_and_compilers": 0.4}, "tier1_count": 10}
+                ).encode("utf-8"),
+            )
+            self.assertEqual(st10, 200)
+            m10 = res10["manifest"]
+            t1_10 = len(m10["anchor_subreddits"]) + len(m10["domain_priming_subreddits"])
+            self.assertEqual(t1_10, 10)
+
+            st20, res20 = self._http_json(
+                port,
+                "POST",
+                "/api/mix",
+                csrf,
+                raw_body=json.dumps(
+                    {"weights": {"systems_engineering": 0.6, "rust_and_compilers": 0.4}, "tier1_count": 20}
+                ).encode("utf-8"),
+            )
+            self.assertEqual(st20, 200)
+            m20 = res20["manifest"]
+            t1_20 = len(m20["anchor_subreddits"]) + len(m20["domain_priming_subreddits"])
+            self.assertEqual(t1_20, 20)
+
+            st_bad, _ = self._http_json(
+                port,
+                "POST",
+                "/api/mix",
+                csrf,
+                raw_body=json.dumps({"weights": {"systems_engineering": 1.0}, "tier1_count": True}).encode("utf-8"),
+            )
+            self.assertEqual(st_bad, 400)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_generate_surfaces_warning_when_github_yields_zero_signals(self) -> None:
+        real_backend = DefaultStudioBackend(project_root=REPO_ROOT)
+        with patch("rcurator.sources.github.GitHubMiner.mine", return_value=[]):
+            res = real_backend.generate({"github_username": "emptyuser", "query": "rust"})
+        self.assertIn("warnings", res)
+        self.assertGreaterEqual(len(res["warnings"]), 1)
+        self.assertIn("emptyuser", res["warnings"][0])
+
+    def test_sync_manifest_normalizes_r_prefixes_and_reports_partial_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            real_backend = DefaultStudioBackend(project_root=REPO_ROOT, snapshots_dir=Path(tmpdir))
+            manifest_with_r = {
+                "name": "R-Prefixed Test",
+                "feed_mode": "following",
+                "anchor_subreddits": ["r/unixporn", {"name": "/r/Fedora/"}],
+                "tier1_systems_subreddits": [{"name": "r/rust", "category": "high_signal_systems_priming"}],
+                "custom_feeds": [{"feed_name": "kernel_focus", "subreddits": ["r/kernel", "/r/ebpf"]}],
+            }
+
+            class _FakeAPI:
+                def __init__(self, token: str, username: str) -> None:
+                    self.desired_seen: list[str] = []
+                    self.feeds_seen: list[dict[str, Any]] = []
+
+                def fetch_all_subscriptions(self) -> dict[str, Any]:
+                    return {}
+
+                def fetch_custom_feeds(self) -> list[dict[str, Any]]:
+                    return []
+
+                def sync_subscriptions(
+                    self, desired: list[str], dry_run: bool = False, prune: bool = False, keep: set[str] | None = None
+                ) -> dict[str, Any]:
+                    self.desired_seen = list(desired)
+                    return {
+                        "dry_run": dry_run,
+                        "already_subscribed": [],
+                        "subscribed": ["unixporn"],
+                        "unsubscribed": [],
+                        "kept_unmanaged": [],
+                        "failed": [{"name": "rust", "status_code": 403, "error": "forbidden"}],
+                    }
+
+                def sync_custom_feeds(self, feeds: list[dict[str, Any]], dry_run: bool = False) -> dict[str, Any]:
+                    self.feeds_seen = list(feeds)
+                    return {
+                        "kernel_focus": {
+                            "status": "failed",
+                            "http_code": 500,
+                            "error": "multi create failed",
+                            "subreddits": feeds[0]["subreddits"] if feeds else [],
+                        }
+                    }
+
+            captured_api: dict[str, _FakeAPI] = {}
+
+            def _make_api(token: str, username: str) -> _FakeAPI:
+                inst = _FakeAPI(token, username)
+                captured_api["api"] = inst
+                return inst
+
+            fake_session = type(
+                "Sess",
+                (),
+                {"access_token": "tok", "username": "tester", "ws_url": "ws://127.0.0.1:9222/devtools/page/1"},
+            )()
+            with (
+                patch("rcurator.cdp_client.acquire_reddit_session", return_value=fake_session),
+                patch("rcurator.reddit_api.RedditAPIClient", side_effect=_make_api),
+                patch(
+                    "rcurator.cdp_client.activate_following_feed",
+                    return_value={"success": False, "method_used": "error", "message": "tab not found"},
+                ),
+            ):
+                sync_res = real_backend.sync_manifest(manifest_with_r, dry_run=False, cdp_port=9222)
+
+            api_used = captured_api["api"]
+            self.assertEqual(api_used.desired_seen, ["unixporn", "Fedora", "rust"])
+            self.assertEqual(api_used.feeds_seen[0]["subreddits"], ["kernel", "ebpf"])
+            self.assertTrue(sync_res["has_failures"])
+            self.assertEqual(len(sync_res["warnings"]), 3)
+            joined = " | ".join(sync_res["warnings"])
+            self.assertIn("rust", joined)
+            self.assertIn("kernel_focus", joined)
+            self.assertIn("Following feed", joined)
+
+    def test_probe_cdp_passive_falls_back_to_token_v2_cookie(self) -> None:
+        import urllib.error
+
+        real_backend = DefaultStudioBackend(project_root=REPO_ROOT)
+
+        class _FakeCDPClient:
+            def __init__(self, ws_url: str) -> None:
+                self.ws_url = ws_url
+
+            async def __aenter__(self) -> "_FakeCDPClient":
+                return self
+
+            async def __aexit__(self, *args: Any) -> None:
+                return None
+
+            async def send(self, method: str, params: dict[str, Any] | None = None, timeout: float = 1.5) -> dict[str, Any]:
+                if method == "Runtime.evaluate":
+                    return {"result": {"value": json.dumps({"token": "expired_ls_token"})}}
+                if method == "Network.getCookies":
+                    return {
+                        "cookies": [
+                            {"name": "token_v2", "value": "valid_cookie_token", "domain": ".reddit.com"}
+                        ]
+                    }
+                return {}
+
+        class _JsonResp:
+            def __init__(self, payload: Any) -> None:
+                self.status = 200
+                self._payload = payload
+
+            def __enter__(self) -> "_JsonResp":
+                return self
+
+            def __exit__(self, *args: Any) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return json.dumps(self._payload).encode("utf-8")
+
+        def _fake_urlopen(req: Any, timeout: float = 2.0) -> _JsonResp:
+            import io
+
+            url = req.full_url if hasattr(req, "full_url") else str(req)
+            if url.endswith("/json/list"):
+                return _JsonResp(
+                    [
+                        {
+                            "type": "page",
+                            "url": "https://www.reddit.com/",
+                            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/1",
+                        }
+                    ]
+                )
+            auth = req.get_header("Authorization") if hasattr(req, "get_header") else ""
+            if auth == "Bearer expired_ls_token":
+                raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, io.BytesIO(b"unauthorized"))
+            if auth == "Bearer valid_cookie_token":
+                return _JsonResp({"name": "fallback_redditor"})
+            raise AssertionError(f"Unexpected request: {url} {auth}")
+
+        with (
+            patch("rcurator.cdp_client.CDPClient", _FakeCDPClient),
+            patch("urllib.request.urlopen", side_effect=_fake_urlopen),
+        ):
+            cdp_ok, auth_ok, uname = real_backend._probe_cdp_passive(9222)
+
+        self.assertTrue(cdp_ok)
+        self.assertTrue(auth_ok)
+        self.assertEqual(uname, "fallback_redditor")
+
+    def test_readonly_project_root_falls_back_to_config_snapshots_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ro_root = Path(tmpdir) / "ro_pkg"
+            ro_root.mkdir()
+            ro_root.chmod(0o555)
+            try:
+                if os.geteuid() == 0:
+                    return
+                backend = DefaultStudioBackend(project_root=ro_root)
+                expected = (Path.home() / ".config" / "reddit-curator" / "snapshots").resolve()
+                self.assertEqual(backend.snapshots_dir, expected)
+            finally:
+                ro_root.chmod(0o755)
 
 
 if __name__ == "__main__":

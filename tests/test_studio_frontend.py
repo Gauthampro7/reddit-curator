@@ -639,7 +639,10 @@ class TestStudioFrontend(unittest.TestCase):
                         subscribed: ["rust"],
                         already_subscribed: [],
                         unsubscribed: [],
-                        failed: ["badsub"],
+                        failed: [
+                          { name: "badsub", status_code: 403, error: "private" },
+                          "legacysub",
+                        ],
                       },
                       custom_feeds: {
                         f1: { status: "failed", http_code: 400, error: "bad feed" },
@@ -664,6 +667,9 @@ class TestStudioFrontend(unittest.TestCase):
             assert.ok(banner.classList.contains("warn") || banner.classList.contains("err"), "Partial sync failure must not show green success");
             assert.ok(!banner.textContent.includes("Done!"), "Must not print green Done! message on failure");
             assert.ok(banner.textContent.includes("badsub"));
+            assert.ok(banner.textContent.includes("r/badsub"));
+            assert.ok(banner.textContent.includes("r/legacysub"));
+            assert.ok(!banner.textContent.includes("[object Object]"), "Easy Apply banner must not render [object Object]");
             assert.ok(banner.textContent.includes("f1"));
 
             h.document.getElementById("btn-sync-live").click();
@@ -671,6 +677,8 @@ class TestStudioFrontend(unittest.TestCase):
             const diffBox = h.document.getElementById("diff-preview-box");
             assert.ok(diffBox.textContent.includes("Failures"));
             assert.ok(diffBox.textContent.includes("badsub"));
+            assert.ok(diffBox.textContent.includes("legacysub"));
+            assert.ok(!diffBox.textContent.includes("[object Object]"), "Sync card must not render [object Object]");
             """
         )
 
@@ -984,6 +992,62 @@ class TestStudioFrontend(unittest.TestCase):
             const tab1 = h.document.getElementById("tab-lab");
             tab1.dispatchEvent({ type: "keydown", key: "ArrowRight" });
             assert.ok(h.document.getElementById("view-inspector").classList.contains("active"));
+            """
+        )
+
+    def test_rollback_failure_emits_error_toast(self) -> None:
+        self._run_node_scenario(
+            r"""
+            const h = createStudioHarness(async (path, opts) => {
+              if (path.startsWith("/api/status")) return { body: { ok: true, csrf_token: "tok", cdp_port: 9222, browsers: [] } };
+              if (path === "/api/presets") return { body: { presets: [] } };
+              if (path === "/api/snapshots") {
+                return {
+                  body: {
+                    snapshots: [
+                      { snapshot_id: "snap_fail", manifest_name: "Fail Pack", created_at: "2026-11-13", username: "tester", subscriptions_count: 3, custom_feeds_count: 1 },
+                    ],
+                  },
+                };
+              }
+              if (path === "/api/rollback") {
+                return {
+                  body: {
+                    rollback: {
+                      snapshot_id: "snap_fail",
+                      username: "tester",
+                      dry_run: false,
+                      restored_subscriptions: [],
+                      removed_subscriptions: [],
+                      restored_custom_feeds: {},
+                      deleted_custom_feeds: [],
+                      failed_subscriptions: [{ name: "badsub", status_code: 403, error: "private" }],
+                      success: false,
+                    },
+                  },
+                };
+              }
+              return { body: {} };
+            });
+
+            await h.boot();
+            const snapTable = h.document.getElementById("snapshots-table-wrap");
+            const rbBtn = snapTable.querySelectorAll("button").find((b) => b.textContent === "Rollback");
+            assert.ok(rbBtn);
+
+            rbBtn.click();
+            await flushMicrotasks();
+            h.document.getElementById("btn-confirm-proceed").click();
+            await flushMicrotasks();
+
+            const diffBox = h.document.getElementById("diff-preview-box");
+            assert.ok(diffBox.querySelector(".summary-card.err"), "Failed rollback card must have .err class");
+
+            const rack = h.document.getElementById("toast-rack");
+            const errToasts = rack.querySelectorAll(".toast-err");
+            const okToasts = rack.querySelectorAll(".toast-ok");
+            assert.equal(errToasts.length, 1, "Failed rollback must emit an err toast");
+            assert.equal(okToasts.length, 0, "Failed rollback must not emit an ok toast");
             """
         )
 

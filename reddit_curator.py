@@ -51,7 +51,7 @@ from rcurator.cli_wizard import (
     format_snapshots_table,
     run_wizard,
 )
-from rcurator.engine.ontology import OntologyRepository, normalize_manifest
+from rcurator.engine.ontology import OntologyRepository, normalize_manifest, validate_manifest
 from rcurator.engine.pipeline import AutoPresetGenerator
 from rcurator.mixer import PresetMixer
 from rcurator.nlp.tokenizer import TechnicalTokenizer
@@ -855,7 +855,8 @@ def _format_quickstart_and_help() -> str:
     """Render safe zero-argument Quickstart banner and grouped CLI help."""
     banner = (
         f"reddit-curator v{__version__} — Deterministic Cognitive Information Diet Engine\n"
-        "=" * 72 + "\n"
+        + ("=" * 72)
+        + "\n"
         "Safe Quickstart (no arguments passed — zero Reddit mutations performed):\n"
         "  1. Environment diagnostics : python3 reddit_curator.py doctor\n"
         "  2. Interactive wizard      : python3 reddit_curator.py wizard\n"
@@ -1281,7 +1282,17 @@ def _validate_manifest_payload(
     if errors:
         return None, errors, warnings, None
 
-    norm = normalize_manifest(raw, ontology)
+    base_check = validate_manifest(raw, ontology)
+    for err in base_check.get("errors") or []:
+        if err not in errors:
+            errors.append(str(err))
+    for warn in base_check.get("warnings") or []:
+        if warn not in warnings:
+            warnings.append(str(warn))
+    if errors:
+        return None, errors, warnings, None
+
+    norm = base_check.get("normalized") or normalize_manifest(raw, ontology)
     anchors = norm.get("anchor_subreddits") or []
     priming = norm.get("domain_priming_subreddits") or []
     if not anchors and not priming:
@@ -1289,20 +1300,14 @@ def _validate_manifest_payload(
             "Manifest must contain at least one subreddit in anchor_subreddits or domain_priming_subreddits."
         )
 
-    anchor_low = {str(a.get("name", "")).lower() for a in anchors if isinstance(a, dict)}
-    priming_low = {str(p.get("name", "")).lower() for p in priming if isinstance(p, dict)}
-    overlap = sorted(anchor_low & priming_low)
-    if overlap:
-        warnings.append(
-            f"Subreddits appear in both anchors and priming: {', '.join(overlap)}"
-        )
-
     audit = FeedHealthAuditor(ontology).audit_manifest(norm)
     unrec = audit.get("unrecognized_subreddits") or []
     if unrec:
         warnings.append(f"Unrecognized subreddits in ontology: {', '.join(unrec[:10])}")
     for rec in audit.get("recommendations") or []:
-        warnings.append(str(rec))
+        rec_str = str(rec)
+        if not rec_str.startswith("Information diet is well-balanced") and rec_str not in warnings:
+            warnings.append(rec_str)
 
     return norm, errors, warnings, audit
 

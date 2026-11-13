@@ -576,6 +576,8 @@ class TestOfflineCLIModes(unittest.TestCase):
         self.assertEqual(err, "")
         m_acq.assert_not_called()
         self.assertIn("Safe Quickstart", out)
+        self.assertEqual(out.count("Deterministic Cognitive Information Diet Engine"), 1)
+        self.assertIn("=" * 72, out)
         self.assertIn("Target & Preset Inspection", out)
         self.assertIn("doctor", out)
 
@@ -640,9 +642,11 @@ class TestOfflineCLIModes(unittest.TestCase):
         self.assertEqual(code_bad_c, 1)
         self.assertFalse(json.loads(out_bad_c)["success"])
 
-        code_val, out_val, _ = self._run_cli(["--preset", "systems_engineering", "--validate", "--agent"])
+        code_val, out_val, _ = self._run_cli(["--preset", "cognitive_science", "--validate", "--agent"])
         self.assertEqual(code_val, 0)
-        self.assertTrue(json.loads(out_val)["valid"])
+        val_payload = json.loads(out_val)
+        self.assertTrue(val_payload["valid"])
+        self.assertEqual(val_payload["warnings"], [])
 
         with tempfile.TemporaryDirectory() as tmpdir:
             bad_manifest = Path(tmpdir) / "bad.json"

@@ -681,7 +681,12 @@ class DefaultStudioBackend:
                     if isinstance(parsed, list):
                         cdp_connected = True
                         targets = [t for t in parsed if isinstance(t, dict)]
-        except Exception:
+        except Exception as exc:
+            if hasattr(exc, "close"):
+                try:
+                    exc.close()
+                except Exception:
+                    pass
             return False, False, None
 
         reddit_ws_url: str | None = None
@@ -760,7 +765,12 @@ class DefaultStudioBackend:
                             authenticated = True
                             username = str(me_data["name"])
                             break
-            except Exception:
+            except Exception as exc:
+                if hasattr(exc, "close"):
+                    try:
+                        exc.close()
+                    except Exception:
+                        pass
                 authenticated = False
                 username = None
 

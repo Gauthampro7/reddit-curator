@@ -8,6 +8,7 @@ traversal validation, in-memory upload caps, and workspace blocklists.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import re
@@ -153,7 +154,7 @@ def validate_workspace_path(raw_path: str) -> Path:
 
     Blocks system directories and sensitive credential/browser directories under
     ``$HOME``, and restricts scanning strictly to existing directories inside
-    ``$HOME`` or ``/tmp``.
+    ``$HOME`` or ``/tmp`` (including Fedora Silverblue/Atomic ``/var/home``).
     """
     if not isinstance(raw_path, str) or not raw_path.strip() or "\x00" in raw_path:
         raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "Workspace path must be a non-empty string.")
@@ -169,16 +170,32 @@ def validate_workspace_path(raw_path: str) -> Path:
     system_bases.extend(Path(d).resolve() for d in SENSITIVE_SYSTEM_DIRS if Path(d).exists())
 
     home_raw = Path(os.path.expanduser("~"))
-    home_resolved = Path.home().resolve()
+    home_path = Path.home()
+    home_resolved = home_path.resolve()
+    home_roots = [home_raw, home_path, home_resolved]
+    home_is_system_dir = any(home_resolved == sb for sb in system_bases)
+
     sensitive_home_bases: list[Path] = []
     for rel in SENSITIVE_HOME_REL_DIRS:
         sensitive_home_bases.append(home_raw / rel)
+        sensitive_home_bases.append(home_path / rel)
         sensitive_home_bases.append(home_resolved / rel)
         candidate_res = (home_resolved / rel).resolve()
         sensitive_home_bases.append(candidate_res)
 
-    blocked_bases = system_bases + sensitive_home_bases
-    if _is_relative_to_any(lexical, blocked_bases) or _is_relative_to_any(resolved, blocked_bases):
+    if _is_relative_to_any(lexical, sensitive_home_bases) or _is_relative_to_any(resolved, sensitive_home_bases):
+        raise StudioHTTPError(
+            HTTPStatus.FORBIDDEN,
+            f"Access denied: {raw_path!r} is within a protected system or credential directory.",
+        )
+
+    lexical_in_sys = _is_relative_to_any(lexical, system_bases) and (
+        home_is_system_dir or not _is_relative_to_any(lexical, home_roots)
+    )
+    resolved_in_sys = _is_relative_to_any(resolved, system_bases) and (
+        home_is_system_dir or not _is_relative_to_any(resolved, [home_resolved])
+    )
+    if lexical_in_sys or resolved_in_sys:
         raise StudioHTTPError(
             HTTPStatus.FORBIDDEN,
             f"Access denied: {raw_path!r} is within a protected system or credential directory.",
@@ -186,7 +203,7 @@ def validate_workspace_path(raw_path: str) -> Path:
 
     tmp_raw = Path("/tmp")
     tmp_resolved = tmp_raw.resolve()
-    allowed_roots = [home_raw, home_resolved, tmp_raw, tmp_resolved]
+    allowed_roots = [home_raw, home_path, home_resolved, tmp_raw, tmp_resolved]
     if not (_is_relative_to_any(resolved, allowed_roots) and _is_relative_to_any(lexical, allowed_roots)):
         raise StudioHTTPError(
             HTTPStatus.FORBIDDEN,
@@ -252,6 +269,45 @@ def sanitize_filename(raw_name: str | None, default: str = "resume.pdf") -> str:
     return name[:160]
 
 
+def _extract_disposition_filename(header_text: str) -> str | None:
+    """Extract filename from Content-Disposition supporting RFC 5987, quoted, and unquoted forms."""
+    ext_match = re.search(
+        r"""(?:^|[;\s])filename\*\s*=\s*"?(?P<val>[^;\r\n"]+)"?""",
+        header_text,
+        flags=re.IGNORECASE,
+    )
+    if ext_match is not None:
+        raw_ext = ext_match.group("val").strip()
+        parts = raw_ext.split("'", 2)
+        if len(parts) == 3:
+            charset, _lang, encoded_name = parts
+            encoding = charset.strip() or "utf-8"
+            try:
+                decoded = urllib.parse.unquote(encoded_name, encoding=encoding, errors="replace")
+            except LookupError:
+                decoded = urllib.parse.unquote(encoded_name, encoding="utf-8", errors="replace")
+            return sanitize_filename(decoded, default="resume.pdf")
+        return sanitize_filename(raw_ext, default="resume.pdf")
+
+    quoted_match = re.search(
+        r'(?:^|[;\s])filename\s*=\s*"([^"]*)"',
+        header_text,
+        flags=re.IGNORECASE,
+    )
+    if quoted_match is not None:
+        return sanitize_filename(quoted_match.group(1), default="resume.pdf")
+
+    unquoted_match = re.search(
+        r'(?:^|[;\s])filename\s*=\s*([^;\s"\r\n]+)',
+        header_text,
+        flags=re.IGNORECASE,
+    )
+    if unquoted_match is not None:
+        return sanitize_filename(unquoted_match.group(1), default="resume.pdf")
+
+    return None
+
+
 def parse_multipart_upload(content_type: str, body: bytes) -> tuple[str, bytes]:
     """Parse a ``multipart/form-data`` payload purely in-memory without ``cgi``."""
     match = re.search(r'boundary=(?:"([^"]+)"|([^;\s]+))', content_type, flags=re.IGNORECASE)
@@ -287,9 +343,8 @@ def parse_multipart_upload(content_type: str, body: bytes) -> tuple[str, bytes]:
             part_data = part_data[:-1]
 
         header_text = header_bytes.decode("utf-8", errors="replace")
-        disp_match = re.search(r'filename="([^"]*)"', header_text, flags=re.IGNORECASE)
-        if disp_match is not None:
-            filename = sanitize_filename(disp_match.group(1), default="resume.pdf")
+        filename = _extract_disposition_filename(header_text)
+        if filename is not None:
             return filename, part_data
 
     raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "No file part found in multipart upload.")
@@ -375,6 +430,209 @@ def _extract_manifest(payload: dict[str, Any]) -> dict[str, Any]:
     raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "Request must include a valid 'manifest' object.")
 
 
+def _is_dir_writable(path: Path) -> bool:
+    """Return True if ``path`` is an existing writable directory."""
+    if not path.is_dir():
+        return False
+    if not os.access(path, os.W_OK | os.X_OK):
+        return False
+    try:
+        st_vfs = os.statvfs(path)
+        if st_vfs.f_flag & getattr(os, "ST_RDONLY", 1):
+            return False
+    except OSError:
+        return False
+    return True
+
+
+def _resolve_default_snapshots_dir(project_root: Path) -> Path:
+    """Resolve default snapshots directory, falling back to ~/.config when read-only."""
+    default_dir = (project_root / ".curator_snapshots").resolve()
+    if default_dir.exists():
+        if _is_dir_writable(default_dir):
+            return default_dir
+    else:
+        probe = default_dir.parent
+        while not probe.exists() and probe != probe.parent:
+            probe = probe.parent
+        if _is_dir_writable(probe):
+            return default_dir
+    return (Path.home() / ".config" / "reddit-curator" / "snapshots").resolve()
+
+
+def _strip_r_prefix(raw: Any) -> str:
+    """Strip leading ``r/`` or ``/r/`` and whitespace from a subreddit name."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    return re.sub(r"^/?r/", "", text, flags=re.IGNORECASE).strip("/ ")
+
+
+def _clean_manifest_sub_list(raw_entries: Any) -> list[Any]:
+    if not isinstance(raw_entries, list):
+        return []
+    cleaned: list[Any] = []
+    for item in raw_entries:
+        if isinstance(item, str):
+            name = _strip_r_prefix(item)
+            if name:
+                cleaned.append(name)
+        elif isinstance(item, dict):
+            name = _strip_r_prefix(item.get("name"))
+            if name:
+                copy_item = dict(item)
+                copy_item["name"] = name
+                cleaned.append(copy_item)
+    return cleaned
+
+
+def _strip_r_prefixes_in_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return a shallow-copied manifest with ``r/`` and ``/r/`` prefixes stripped."""
+    cleaned = dict(manifest)
+    for key in ("anchor_subreddits", "domain_priming_subreddits", "tier1_systems_subreddits"):
+        if key in manifest:
+            cleaned[key] = _clean_manifest_sub_list(manifest.get(key))
+
+    raw_feeds = manifest.get("custom_feeds")
+    if isinstance(raw_feeds, list):
+        cleaned_feeds: list[dict[str, Any]] = []
+        for feed in raw_feeds:
+            if not isinstance(feed, dict):
+                continue
+            feed_copy = dict(feed)
+            raw_subs = feed.get("subreddits")
+            if isinstance(raw_subs, list):
+                cleaned_subs: list[Any] = []
+                for sub in raw_subs:
+                    if isinstance(sub, dict):
+                        sname = _strip_r_prefix(sub.get("name"))
+                        if sname:
+                            sub_copy = dict(sub)
+                            sub_copy["name"] = sname
+                            cleaned_subs.append(sub_copy)
+                    else:
+                        sname = _strip_r_prefix(sub)
+                        if sname:
+                            cleaned_subs.append(sname)
+                feed_copy["subreddits"] = cleaned_subs
+            cleaned_feeds.append(feed_copy)
+        cleaned["custom_feeds"] = cleaned_feeds
+
+    return cleaned
+
+
+def _collect_sync_failures(
+    subs_result: dict[str, Any] | None,
+    feeds_result: dict[str, Any] | None,
+    following_result: dict[str, Any] | None,
+) -> tuple[bool, list[str]]:
+    """Inspect sync sub-results and produce ``(has_failures, warnings)``."""
+    warnings: list[str] = []
+
+    failed_subs = (subs_result or {}).get("failed") or []
+    if isinstance(failed_subs, list) and failed_subs:
+        names: list[str] = []
+        for item in failed_subs:
+            if isinstance(item, dict):
+                names.append(str(item.get("name") or item.get("subreddit") or "unknown"))
+            else:
+                names.append(str(item))
+        preview = ", ".join(names[:10])
+        suffix = f" (+{len(names) - 10} more)" if len(names) > 10 else ""
+        warnings.append(f"Failed to sync {len(names)} subscription(s): {preview}{suffix}.")
+
+    if isinstance(feeds_result, dict):
+        for feed_name, feed_info in feeds_result.items():
+            if isinstance(feed_info, dict) and feed_info.get("status") == "failed":
+                err = feed_info.get("error") or (
+                    f"HTTP {feed_info['http_code']}" if feed_info.get("http_code") else "request failed"
+                )
+                warnings.append(f"Custom feed '{feed_name}' failed: {err}")
+
+    if isinstance(following_result, dict) and following_result.get("success") is False:
+        msg = following_result.get("message") or "Could not activate Following feed."
+        warnings.append(f"Following feed activation failed: {msg}")
+
+    return bool(warnings), warnings
+
+
+def _sanitize_error_message(raw: str, fallback: str) -> str:
+    """Normalize an exception message without ever leaking raw multi-line tracebacks."""
+    text = (raw or "").strip()
+    if not text:
+        return fallback
+    if "Traceback (most recent call last):" in text:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        text = lines[-1] if lines else fallback
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or fallback
+
+
+def _with_browser_guidance(base_msg: str) -> str:
+    guidance = (
+        "Launch a Chromium/Chrome/Brave browser with remote debugging enabled "
+        "and ensure you are logged into https://www.reddit.com."
+    )
+    lower = base_msg.lower()
+    if "logged into" not in lower and "launch" not in lower:
+        return f"{base_msg} {guidance}"
+    return base_msg
+
+
+def _map_exception_to_http(exc: Exception) -> tuple[int, str]:
+    """Map backend/runtime exceptions to deterministic HTTP status codes without tracebacks."""
+    if isinstance(exc, StudioHTTPError):
+        return int(exc.status), _sanitize_error_message(exc.message, "Request error.")
+
+    cdp_error_cls: type[BaseException] | None = None
+    try:
+        from rcurator.cdp_client import CDPError as _CDPError
+
+        cdp_error_cls = _CDPError
+    except ImportError:
+        pass
+
+    if cdp_error_cls is not None and isinstance(exc, cdp_error_cls):
+        base_msg = _sanitize_error_message(str(exc), "Browser CDP connection unavailable.")
+        return int(HTTPStatus.SERVICE_UNAVAILABLE), _with_browser_guidance(base_msg)
+
+    req_timeout_cls: type[BaseException] | None = None
+    req_conn_cls: type[BaseException] | None = None
+    req_base_cls: type[BaseException] | None = None
+    try:
+        import requests
+
+        req_timeout_cls = requests.exceptions.Timeout
+        req_conn_cls = requests.exceptions.ConnectionError
+        req_base_cls = requests.exceptions.RequestException
+    except ImportError:
+        pass
+
+    if isinstance(exc, TimeoutError) or (req_timeout_cls is not None and isinstance(exc, req_timeout_cls)):
+        return int(HTTPStatus.GATEWAY_TIMEOUT), _sanitize_error_message(str(exc), "Operation timed out.")
+
+    if isinstance(exc, ConnectionError) or (req_conn_cls is not None and isinstance(exc, req_conn_cls)):
+        base_msg = _sanitize_error_message(str(exc), "Could not connect to browser CDP or Reddit service.")
+        return int(HTTPStatus.SERVICE_UNAVAILABLE), _with_browser_guidance(base_msg)
+
+    if req_base_cls is not None and isinstance(exc, req_base_cls):
+        base_msg = _sanitize_error_message(str(exc), "Network request to browser CDP or Reddit failed.")
+        return int(HTTPStatus.SERVICE_UNAVAILABLE), _with_browser_guidance(base_msg)
+
+    if isinstance(exc, FileNotFoundError):
+        return int(HTTPStatus.NOT_FOUND), _sanitize_error_message(str(exc), "Requested resource not found.")
+
+    if isinstance(exc, ValueError):
+        return int(HTTPStatus.BAD_REQUEST), _sanitize_error_message(str(exc), "Invalid request parameter.")
+
+    if isinstance(exc, RuntimeError):
+        return int(HTTPStatus.SERVICE_UNAVAILABLE), _sanitize_error_message(
+            str(exc), "Service temporarily unavailable."
+        )
+
+    return int(HTTPStatus.INTERNAL_SERVER_ERROR), f"Internal server error ({type(exc).__name__})."
+
+
 class DefaultStudioBackend:
     """Default backend reading local presets/ontology and lazily importing rcurator modules."""
 
@@ -390,7 +648,10 @@ class DefaultStudioBackend:
         self.project_root = (project_root or Path(__file__).resolve().parents[2]).resolve()
         self.ontology_path = (ontology_path or (self.project_root / "curator_data" / "subreddit_ontology.json")).resolve()
         self.presets_dir = (presets_dir or (self.project_root / "presets")).resolve()
-        self.snapshots_dir = (snapshots_dir or (self.project_root / ".curator_snapshots")).resolve()
+        if snapshots_dir is not None:
+            self.snapshots_dir = Path(snapshots_dir).resolve()
+        else:
+            self.snapshots_dir = _resolve_default_snapshots_dir(self.project_root)
         self.philosophy_path = (philosophy_path or (self.project_root / "curator_data" / "philosophy.json")).resolve()
         self.cdp_port = int(cdp_port)
         self._ontology_cache: dict[str, Any] | None = None
@@ -434,11 +695,12 @@ class DefaultStudioBackend:
         if not reddit_ws_url:
             return cdp_connected, False, None
 
-        token: str | None = None
+        candidate_tokens: list[str] = []
         try:
             from rcurator.cdp_client import CDPClient
 
-            async def _read_token() -> str | None:
+            async def _read_tokens() -> list[str]:
+                tokens: list[str] = []
                 async with CDPClient(reddit_ws_url) as client:
                     res = await client.send(
                         "Runtime.evaluate",
@@ -453,24 +715,36 @@ class DefaultStudioBackend:
                         try:
                             tok_obj = json.loads(raw_val)
                             if isinstance(tok_obj, dict) and tok_obj.get("token"):
-                                return str(tok_obj["token"])
+                                ls_tok = str(tok_obj["token"]).strip()
+                                if ls_tok:
+                                    tokens.append(ls_tok)
                         except json.JSONDecodeError:
                             pass
-                    cookies_res = await client.send(
-                        "Network.getCookies",
-                        {"urls": ["https://www.reddit.com", "https://oauth.reddit.com"]},
-                        timeout=1.5,
-                    )
+                    try:
+                        cookies_res = await client.send(
+                            "Network.getCookies",
+                            {"urls": ["https://www.reddit.com", "https://oauth.reddit.com"]},
+                            timeout=1.5,
+                        )
+                    except Exception:
+                        cookies_res = {}
                     for cookie in (cookies_res.get("cookies") or []):
-                        if isinstance(cookie, dict) and cookie.get("name") == "token_v2" and cookie.get("value"):
-                            return str(cookie["value"])
-                    return None
+                        if not isinstance(cookie, dict):
+                            continue
+                        if cookie.get("name") == "token_v2" and cookie.get("value"):
+                            domain = str(cookie.get("domain") or "").strip().lower().lstrip(".")
+                            if domain and domain != "reddit.com" and not domain.endswith(".reddit.com"):
+                                continue
+                            cookie_tok = str(cookie["value"]).strip()
+                            if cookie_tok and cookie_tok not in tokens:
+                                tokens.append(cookie_tok)
+                    return tokens
 
-            token = asyncio.run(asyncio.wait_for(_read_token(), timeout=2.0))
+            candidate_tokens = asyncio.run(asyncio.wait_for(_read_tokens(), timeout=2.0))
         except Exception:
-            token = None
+            candidate_tokens = []
 
-        if token:
+        for token in candidate_tokens:
             try:
                 me_req = urllib.request.Request(
                     "https://oauth.reddit.com/api/v1/me?raw_json=1",
@@ -485,6 +759,7 @@ class DefaultStudioBackend:
                         if isinstance(me_data, dict) and me_data.get("name"):
                             authenticated = True
                             username = str(me_data["name"])
+                            break
             except Exception:
                 authenticated = False
                 username = None
@@ -667,6 +942,7 @@ class DefaultStudioBackend:
 
         evidences: list[Any] = []
         sources_used: list[str] = []
+        warnings: list[str] = []
 
         workspace_raw = str(payload.get("workspace_path") or "").strip()
         if workspace_raw:
@@ -682,9 +958,21 @@ class DefaultStudioBackend:
             from rcurator.sources.github import GitHubMiner
 
             gh_token = str(payload.get("github_token") or "").strip() or None
-            gh_evidences = GitHubMiner(token=gh_token).mine(github_user)
+            gh_miner = GitHubMiner(token=gh_token)
+            gh_evidences = gh_miner.mine(github_user)
             evidences.extend(gh_evidences)
             sources_used.append("github")
+            miner_warnings = getattr(gh_miner, "last_warnings", None)
+            if isinstance(miner_warnings, list):
+                for item in miner_warnings:
+                    msg = str(item).strip()
+                    if msg and msg not in warnings:
+                        warnings.append(msg)
+            if not gh_evidences and not warnings:
+                warnings.append(
+                    f"GitHub mining for '{github_user}' yielded 0 signals "
+                    "(account may not exist, have no public repositories, or hit API rate limits)."
+                )
 
         resume_items = payload.get("resume_evidences") or []
         if isinstance(resume_items, list) and resume_items:
@@ -759,13 +1047,22 @@ class DefaultStudioBackend:
             "manifest": manifest,
             "evidences_count": len(evidences),
             "sources_used": sources_used,
+            "warnings": warnings,
         }
 
     def mix_presets(
         self,
         weights: dict[str, float],
         target_ratio: tuple[int, int, int] = (40, 35, 25),
+        tier1_count: int = 18,
     ) -> dict[str, Any]:
+        if isinstance(tier1_count, bool):
+            raise ValueError("tier1_count must be an integer between 3 and 30.")
+        try:
+            resolved_tier1 = max(3, min(30, int(tier1_count)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tier1_count must be an integer between 3 and 30.") from exc
+
         validated_weights: dict[str, float] = {}
         for preset_name, raw_w in weights.items():
             safe_name = validate_safe_identifier(preset_name, label="preset name")
@@ -792,10 +1089,22 @@ class DefaultStudioBackend:
             ) from exc
 
         ontology = OntologyRepository.load(self.ontology_path)
-        manifest = PresetMixer(ontology, self.presets_dir).mix(
-            validated_weights,
-            target_ratio=_normalize_ratio(target_ratio),
+        mixer = PresetMixer(ontology, self.presets_dir)
+        mix_params = inspect.signature(mixer.mix).parameters
+        supports_tier1 = "tier1_count" in mix_params or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in mix_params.values()
         )
+        if supports_tier1:
+            manifest = mixer.mix(
+                validated_weights,
+                target_ratio=_normalize_ratio(target_ratio),
+                tier1_count=resolved_tier1,
+            )
+        else:
+            manifest = mixer.mix(
+                validated_weights,
+                target_ratio=_normalize_ratio(target_ratio),
+            )
         return {"manifest": manifest}
 
     def audit_manifest(self, manifest: dict[str, Any]) -> dict[str, Any]:
@@ -809,7 +1118,7 @@ class DefaultStudioBackend:
             ) from exc
 
         ontology = OntologyRepository.load(self.ontology_path)
-        normalized = normalize_manifest(manifest, ontology=ontology)
+        normalized = normalize_manifest(_strip_r_prefixes_in_manifest(manifest), ontology=ontology)
         return FeedHealthAuditor(ontology).audit_manifest(normalized)
 
     def import_manifest(
@@ -846,7 +1155,7 @@ class DefaultStudioBackend:
             ) from exc
 
         ontology = OntologyRepository.load(self.ontology_path)
-        normalized = normalize_manifest(manifest, ontology=ontology)
+        normalized = normalize_manifest(_strip_r_prefixes_in_manifest(manifest), ontology=ontology)
         audit = FeedHealthAuditor(ontology).audit_manifest(normalized)
         safe_name = sanitize_filename(filename, default="custom_manifest.json")
         return {
@@ -879,6 +1188,17 @@ class DefaultStudioBackend:
         ontology = OntologyRepository.load(self.ontology_path)
         return FeedHealthAuditor(ontology).audit_live(sub_names, target_ratio=_normalize_ratio(target_ratio))
 
+    def _normalize_manifest_payload(self, manifest: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(manifest, dict):
+            raise ValueError("Manifest must be a JSON object.")
+        cleaned = _strip_r_prefixes_in_manifest(manifest)
+        try:
+            from rcurator.engine.ontology import OntologyRepository, normalize_manifest
+        except ImportError:
+            return cleaned
+        ontology = OntologyRepository.load(self.ontology_path) if self.ontology_path.is_file() else None
+        return normalize_manifest(cleaned, ontology=ontology)
+
     def compute_diff(
         self,
         manifest: dict[str, Any],
@@ -887,6 +1207,7 @@ class DefaultStudioBackend:
         cdp_port: int | None = None,
     ) -> dict[str, Any]:
         target_port = _validate_cdp_port(cdp_port, self.cdp_port)
+        normalized_manifest = self._normalize_manifest_payload(manifest)
         try:
             from rcurator.cdp_client import acquire_reddit_session
             from rcurator.reddit_api import RedditAPIClient
@@ -903,7 +1224,7 @@ class DefaultStudioBackend:
         live_feeds = api.fetch_custom_feeds()
         sub_names = [entry.get("name", key) for key, entry in live_subs.items()]
         return SnapshotManager(self.snapshots_dir).compute_diff(
-            manifest,
+            normalized_manifest,
             live_subs=sub_names,
             live_feeds=live_feeds,
             prune=bool(prune),
@@ -919,14 +1240,20 @@ class DefaultStudioBackend:
         cdp_port: int | None = None,
     ) -> dict[str, Any]:
         target_port = _validate_cdp_port(cdp_port, self.cdp_port)
+        normalized_manifest = self._normalize_manifest_payload(manifest)
         desired: list[str] = []
         seen: set[str] = set()
-        priming = manifest.get("domain_priming_subreddits") or manifest.get("tier1_systems_subreddits") or []
-        for entry in list(manifest.get("anchor_subreddits") or []) + list(priming):
+        priming = (
+            normalized_manifest.get("domain_priming_subreddits")
+            or normalized_manifest.get("tier1_systems_subreddits")
+            or []
+        )
+        for entry in list(normalized_manifest.get("anchor_subreddits") or []) + list(priming):
             name = entry.get("name") if isinstance(entry, dict) else str(entry)
-            if name and name.lower() not in seen:
-                seen.add(name.lower())
-                desired.append(name)
+            clean_name = _strip_r_prefix(name)
+            if clean_name and clean_name.lower() not in seen:
+                seen.add(clean_name.lower())
+                desired.append(clean_name)
 
         try:
             from rcurator.cdp_client import acquire_reddit_session, activate_following_feed
@@ -945,16 +1272,16 @@ class DefaultStudioBackend:
                 raise
             analytics: dict[str, Any] | None = None
             try:
-                analytics = self.audit_manifest(manifest)
+                analytics = self.audit_manifest(normalized_manifest)
             except Exception:
                 analytics = None
             custom_feeds_preview: dict[str, dict[str, Any]] = {}
-            for feed in list(manifest.get("custom_feeds") or []):
+            for feed in list(normalized_manifest.get("custom_feeds") or []):
                 if not isinstance(feed, dict):
                     continue
                 raw_name = str(feed.get("feed_name") or "focus_domain").strip() or "focus_domain"
                 display_name = str(feed.get("display_name") or raw_name)
-                subs = [str(s).strip() for s in (feed.get("subreddits") or []) if str(s).strip()]
+                subs = [_strip_r_prefix(s) for s in (feed.get("subreddits") or []) if _strip_r_prefix(s)]
                 try:
                     partitions = _partition_feed_subreddits(raw_name, display_name, subs)
                 except Exception:
@@ -987,6 +1314,8 @@ class DefaultStudioBackend:
                 "custom_feeds": custom_feeds_preview,
                 "following_feed": None,
                 "analytics": analytics,
+                "has_failures": False,
+                "warnings": [],
             }
 
         api = RedditAPIClient(session.access_token, session.username)
@@ -998,7 +1327,7 @@ class DefaultStudioBackend:
                 session.username,
                 live_subs,
                 live_feeds,
-                manifest,
+                normalized_manifest,
             )
             snapshot_id = snap.get("snapshot_id")
 
@@ -1009,12 +1338,14 @@ class DefaultStudioBackend:
             keep=set(keep or []),
         )
         feeds_result = api.sync_custom_feeds(
-            list(manifest.get("custom_feeds") or []),
+            list(normalized_manifest.get("custom_feeds") or []),
             dry_run=bool(dry_run),
         )
         following_result: dict[str, Any] | None = None
-        if not dry_run and manifest.get("feed_mode", "following") == "following":
+        if not dry_run and normalized_manifest.get("feed_mode", "following") == "following":
             following_result = activate_following_feed(session.ws_url)
+
+        has_failures, warnings = _collect_sync_failures(subs_result, feeds_result, following_result)
 
         result: dict[str, Any] = {
             "dry_run": bool(dry_run),
@@ -1024,11 +1355,13 @@ class DefaultStudioBackend:
             "subscriptions": subs_result,
             "custom_feeds": feeds_result,
             "following_feed": following_result,
+            "has_failures": has_failures,
+            "warnings": warnings,
         }
         if dry_run:
             result["mode"] = "live_dry_run"
             try:
-                result["analytics"] = self.audit_manifest(manifest)
+                result["analytics"] = self.audit_manifest(normalized_manifest)
             except Exception:
                 result["analytics"] = None
         return result
@@ -1173,31 +1506,32 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
         return True
 
     def _read_raw_body(self, max_bytes: int) -> bytes:
-        raw_len = self.headers.get("Content-Length")
-        if raw_len is not None:
-            try:
-                content_length = int(raw_len)
-            except ValueError as exc:
-                raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "Invalid Content-Length header.") from exc
-            if content_length < 0:
-                raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "Negative Content-Length.")
-            if content_length > max_bytes:
-                raise StudioHTTPError(
-                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-                    f"Payload exceeds maximum limit of {max_bytes} bytes.",
-                )
-            data = self.rfile.read(content_length)
-            if len(data) > max_bytes:
-                raise StudioHTTPError(
-                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-                    f"Payload exceeds maximum limit of {max_bytes} bytes.",
-                )
-            return data
-
         transfer_enc = (self.headers.get("Transfer-Encoding") or "").lower()
         if "chunked" in transfer_enc:
             raise StudioHTTPError(HTTPStatus.LENGTH_REQUIRED, "Content-Length header is required.")
-        return b""
+
+        raw_len = self.headers.get("Content-Length")
+        if raw_len is None:
+            raise StudioHTTPError(HTTPStatus.LENGTH_REQUIRED, "Content-Length header is required.")
+
+        try:
+            content_length = int(raw_len)
+        except ValueError as exc:
+            raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "Invalid Content-Length header.") from exc
+        if content_length < 0:
+            raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "Negative Content-Length.")
+        if content_length > max_bytes:
+            raise StudioHTTPError(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                f"Payload exceeds maximum limit of {max_bytes} bytes.",
+            )
+        data = self.rfile.read(content_length)
+        if len(data) > max_bytes:
+            raise StudioHTTPError(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                f"Payload exceeds maximum limit of {max_bytes} bytes.",
+            )
+        return data
 
     def _read_json_body(self) -> dict[str, Any]:
         raw = self._read_raw_body(MAX_JSON_BODY_BYTES)
@@ -1273,7 +1607,8 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
         except StudioHTTPError as exc:
             self._send_json(exc.status, {"error": exc.message})
         except Exception as exc:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+            status, message = _map_exception_to_http(exc)
+            self._send_json(status, {"error": message})
 
     def do_POST(self) -> None:
         if not self._enforce_security(require_csrf=True):
@@ -1320,7 +1655,22 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 for preset_key in weights:
                     validate_safe_identifier(str(preset_key), label="preset name")
                 target_ratio = _normalize_ratio(payload.get("target_ratio"))
-                result = self.studio_server.backend.mix_presets(weights, target_ratio=target_ratio)
+                raw_tier1 = payload.get("tier1_count")
+                backend_mix = self.studio_server.backend.mix_presets
+                mix_params = inspect.signature(backend_mix).parameters
+                supports_tier1 = "tier1_count" in mix_params or any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD for p in mix_params.values()
+                )
+                if raw_tier1 is not None and raw_tier1 != "" and supports_tier1:
+                    if isinstance(raw_tier1, bool):
+                        raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "tier1_count must be an integer.")
+                    try:
+                        tier1_val = max(3, min(30, int(raw_tier1)))
+                    except (TypeError, ValueError) as exc:
+                        raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "tier1_count must be an integer.") from exc
+                    result = backend_mix(weights, target_ratio=target_ratio, tier1_count=tier1_val)
+                else:
+                    result = backend_mix(weights, target_ratio=target_ratio)
                 self._send_json(HTTPStatus.OK, result)
                 return
 
@@ -1415,7 +1765,8 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
         except StudioHTTPError as exc:
             self._send_json(exc.status, {"error": exc.message})
         except Exception as exc:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+            status, message = _map_exception_to_http(exc)
+            self._send_json(status, {"error": message})
 
 
 def create_studio_server(

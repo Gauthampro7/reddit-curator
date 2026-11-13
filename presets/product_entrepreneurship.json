@@ -52,29 +52,9 @@
   ],
   "domain_priming_subreddits": [
     {
-      "name": "SaaS",
-      "category": "domain_priming",
-      "description": "B2B SaaS growth, pricing architecture, multi-tenant engineering, and retention."
-    },
-    {
-      "name": "startups",
-      "category": "domain_priming",
-      "description": "Early-stage venture building, product-market fit, B2B distribution, and unit economics."
-    },
-    {
-      "name": "ProductManagement",
-      "category": "domain_priming",
-      "description": "Product discovery, positioning, quantitative metrics, and cross-functional strategy."
-    },
-    {
       "name": "EngineeringManagers",
       "category": "domain_priming",
       "description": "Engineering management, organizational scaling, hiring loops, and delivery metrics."
-    },
-    {
-      "name": "ExperiencedDevs",
-      "category": "domain_priming",
-      "description": "Senior/Staff engineering trade-offs, system reliability, and organizational dynamics."
     },
     {
       "name": "indiehackers",

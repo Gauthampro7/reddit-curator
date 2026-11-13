@@ -20,11 +20,6 @@
       "description": "Terminal utilities, shell craftsmanship, and composable Unix CLI workflows."
     },
     {
-      "name": "linux",
-      "category": "aesthetic_leisure",
-      "description": "Linux ecosystem developments, kernel news, and power-user workflows."
-    },
-    {
       "name": "MapPorn",
       "category": "aesthetic_leisure",
       "description": "Cartographic craft, thematic maps, historical geography, and map projections."
@@ -52,11 +47,6 @@
   ],
   "domain_priming_subreddits": [
     {
-      "name": "dataengineering",
-      "category": "domain_priming",
-      "description": "Data lakehouses, columnar formats, CDC streaming, orchestration, and pipeline modeling."
-    },
-    {
       "name": "duckdb",
       "category": "domain_priming",
       "description": "In-process vectorized analytical SQL, Parquet/Arrow zero-copy, and lakehouse queries."
@@ -65,11 +55,6 @@
       "name": "Polars",
       "category": "domain_priming",
       "description": "Blazingly fast multi-threaded DataFrame engine built in Rust on Apache Arrow."
-    },
-    {
-      "name": "PostgreSQL",
-      "category": "domain_priming",
-      "description": "Relational internals, query tuning, indexing strategies, WAL, and ACID transactions."
     },
     {
       "name": "databasedevelopment",
@@ -95,11 +80,6 @@
       "name": "apachekafka",
       "category": "domain_priming",
       "description": "Distributed commit logs, KRaft consensus, CDC pipelines, and event-driven systems."
-    },
-    {
-      "name": "statistics",
-      "category": "domain_priming",
-      "description": "Statistical inference, Bayesian modeling, experimental design, and probability."
     }
   ],
   "custom_feeds": [
@@ -118,7 +98,9 @@
         "clickhouse",
         "dbt",
         "apachespark",
-        "apachekafka"
+        "apachekafka",
+        "statistics",
+        "linux"
       ]
     }
   ]

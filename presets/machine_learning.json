@@ -15,11 +15,6 @@
       "description": "Desktop aesthetics and dev ergonomics"
     },
     {
-      "name": "linux",
-      "category": "aesthetic_leisure",
-      "description": "Linux operating system ecosystem"
-    },
-    {
       "name": "commandline",
       "category": "aesthetic_leisure",
       "description": "Terminal and data processing utilities"
@@ -51,21 +46,6 @@
     }
   ],
   "domain_priming_subreddits": [
-    {
-      "name": "MachineLearning",
-      "category": "domain_priming",
-      "description": "Technical ML papers, architectures, and research"
-    },
-    {
-      "name": "LocalLLaMA",
-      "category": "domain_priming",
-      "description": "Quantization, local inference, and open weights"
-    },
-    {
-      "name": "artificial",
-      "category": "domain_priming",
-      "description": "AI developments and foundational implications"
-    },
     {
       "name": "Compilers",
       "category": "domain_priming",
@@ -106,7 +86,9 @@
         "deeplearning",
         "LanguageTechnology",
         "MLOps",
-        "reinforcementlearning"
+        "reinforcementlearning",
+        "artificial",
+        "linux"
       ]
     }
   ]

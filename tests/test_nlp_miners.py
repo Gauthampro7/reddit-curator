@@ -21,9 +21,19 @@ from rcurator.nlp.tokenizer import (
     load_ontology_phrases,
 )
 from rcurator.sources.github import GitHubMiner, compute_repo_weight
-from rcurator.sources.resume import EncryptedPDFError, MAX_RESUME_BYTES, ResumeParser
+from rcurator.sources.resume import (
+    EncryptedPDFError,
+    MAX_BFRANGE_ENTRIES,
+    MAX_RESUME_BYTES,
+    ResumeParser,
+    _parse_tounicode_cmap,
+)
 from rcurator.sources.types import SignalEvidence
-from rcurator.sources.workspace import WorkspaceScanner
+from rcurator.sources.workspace import (
+    WorkspaceScanner,
+    is_secret_filename,
+    is_sensitive_path,
+)
 
 
 def _build_synthetic_pdf(objects_body: list[tuple[int, bytes]], trailer_extra: bytes = b"") -> bytes:
@@ -336,6 +346,66 @@ class TestWorkspaceScanner(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     scanner.scan(Path("/etc"))
 
+    def test_fedora_atomic_var_home_allowed_while_system_and_ssh_blocked(self) -> None:
+        fake_var_home = Path("/var/home/alice")
+        with mock.patch("pathlib.Path.home", return_value=fake_var_home):
+            self.assertFalse(is_sensitive_path(Path("/var/home/alice/repos/myapp")))
+            self.assertTrue(is_sensitive_path(Path("/var/home/alice/.ssh")))
+            self.assertTrue(is_sensitive_path(Path("/var/home/alice/.config/reddit-curator")))
+            self.assertTrue(is_sensitive_path(Path("/var/log")))
+            self.assertTrue(is_sensitive_path(Path("/var/lib")))
+            self.assertTrue(is_sensitive_path(Path("/etc")))
+
+    def test_secret_glob_allows_source_code_and_blocks_secrets(self) -> None:
+        self.assertFalse(is_secret_filename("tokenizer.py"))
+        self.assertFalse(is_secret_filename("token_bucket.rs"))
+        self.assertFalse(is_secret_filename("secret_handshake.ts"))
+        self.assertTrue(is_secret_filename("api.token"))
+        self.assertTrue(is_secret_filename("oauth_token.json"))
+        self.assertTrue(is_secret_filename("app_secrets.yaml"))
+        self.assertTrue(is_secret_filename(".env"))
+        self.assertTrue(is_secret_filename(".env.local"))
+        self.assertTrue(is_secret_filename("cookies.json"))
+        self.assertTrue(is_secret_filename("aws_credentials.txt"))
+        self.assertTrue(is_secret_filename("server.pem"))
+        self.assertTrue(is_secret_filename("private.key"))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "tokenizer.py").write_text("import regex\n", encoding="utf-8")
+            (root / "api.token").write_text("import leaked_token_pkg\n", encoding="utf-8")
+            terms = {e.term for e in WorkspaceScanner().scan(root)}
+            self.assertIn("regex", terms)
+            self.assertNotIn("leaked_token_pkg", terms)
+
+    def test_js_subpaths_github_workflows_and_python_stopword_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wf = root / ".github" / "workflows"
+            wf.mkdir(parents=True)
+            (wf / "ci.yml").write_text("name: CI\non: [push]\n", encoding="utf-8")
+            (root / "page.tsx").write_text(
+                'import Image from "next/image";\n'
+                'import { ReactQueryDevtools } from "@tanstack/react-query/devtools";\n'
+                'import fs from "fs/promises";\n',
+                encoding="utf-8",
+            )
+            (root / "app.py").write_text(
+                "import utils\nimport main\nimport config\nfrom helpers import run\nimport httpx\n",
+                encoding="utf-8",
+            )
+            terms = {e.term for e in WorkspaceScanner().scan(root)}
+            self.assertIn("ci/cd", terms)
+            self.assertIn("github-actions", terms)
+            self.assertIn("next.js", terms)
+            self.assertIn("tanstack-query", terms)
+            self.assertNotIn("fs", terms)
+            self.assertIn("httpx", terms)
+            self.assertNotIn("utils", terms)
+            self.assertNotIn("main", terms)
+            self.assertNotIn("config", terms)
+            self.assertNotIn("helpers", terms)
+
 
 class TestGitHubMiner(unittest.TestCase):
     def test_budget_etag_304_rate_limit_and_stale_fallback(self) -> None:
@@ -494,6 +564,46 @@ class TestGitHubMiner(unittest.TestCase):
             low_miner.mine("octo")
             self.assertEqual(low_miner.last_request_count, 3)
             self.assertFalse(any(u.endswith("/readme") for u, _ in calls))
+
+    def test_404_and_403_without_cache_surface_errors_and_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session_404 = mock.Mock()
+            session_404.get.return_value = _FakeHTTPResponse(404, {"message": "Not Found"})
+            miner_404 = GitHubMiner(cache_dir=Path(tmp) / "c404", session=session_404)
+            with self.assertRaises(RuntimeError) as ctx_404:
+                miner_404.mine("nonexistent-user-xyz")
+            self.assertIn("404", str(ctx_404.exception))
+            self.assertEqual(miner_404.last_request_count, 1)
+            self.assertTrue(any("404" in w for w in miner_404.last_warnings))
+
+            session_403 = mock.Mock()
+            session_403.get.return_value = _FakeHTTPResponse(403, {"message": "rate limit"})
+            miner_403 = GitHubMiner(cache_dir=Path(tmp) / "c403", session=session_403)
+            with self.assertRaises(RuntimeError) as ctx_403:
+                miner_403.mine("octo")
+            self.assertIn("403", str(ctx_403.exception))
+            self.assertTrue(any("403" in w for w in miner_403.last_warnings))
+
+            # Optional /readme 404 records warning without failing mine()
+            def partial_get(url: str, headers=None, timeout: float = 10.0):
+                if url.endswith("/users/octo"):
+                    return _FakeHTTPResponse(200, {"bio": "Rust dev"}, {"X-RateLimit-Remaining": "50"})
+                if "/repos?" in url:
+                    return _FakeHTTPResponse(
+                        200,
+                        [{"name": "proj", "language": "Rust", "fork": False}],
+                        {"X-RateLimit-Remaining": "50"},
+                    )
+                if "/starred?" in url:
+                    return _FakeHTTPResponse(200, [], {"X-RateLimit-Remaining": "50"})
+                return _FakeHTTPResponse(404, {})
+
+            session_partial = mock.Mock()
+            session_partial.get.side_effect = partial_get
+            miner_ok = GitHubMiner(cache_dir=Path(tmp) / "cpart", session=session_partial)
+            evs = miner_ok.mine("octo")
+            self.assertTrue(any(e.term == "rust" for e in evs))
+            self.assertTrue(any("404" in w for w in miner_ok.last_warnings))
 
 
 class TestResumeParser(unittest.TestCase):
@@ -688,6 +798,52 @@ class TestResumeParser(unittest.TestCase):
             ws_terms = {e.term for e in WorkspaceScanner().scan(Path(tmp))}
             self.assertIn("rust", ws_terms)
             self.assertNotIn("unreachable_tail_marker", ws_terms)
+
+    def test_cmap_giant_bfrange_is_capped_at_4096(self) -> None:
+        cmap = (
+            b"/CIDInit /ProcSet findresource begin\n"
+            b"begincmap\n"
+            b"1 beginbfrange\n"
+            b"<0000> <FFFFFFFF> <0020>\n"
+            b"endbfrange\n"
+            b"endcmap\n"
+        )
+        table = _parse_tounicode_cmap(cmap)
+        self.assertLessEqual(len(table), MAX_BFRANGE_ENTRIES)
+        self.assertEqual(len(table), MAX_BFRANGE_ENTRIES)
+
+    def test_pdftotext_uses_shutil_which_and_defers_pure_pdf_parse(self) -> None:
+        fake_pdf = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n"
+        parser = ResumeParser()
+        fake_proc = mock.Mock(returncode=0, stdout=b"Skills\nRust C++20\n", stderr=b"")
+        with (
+            mock.patch("rcurator.sources.resume.shutil.which", return_value="/custom/bin/pdftotext") as m_which,
+            mock.patch("rcurator.sources.resume.os.path.isfile", return_value=True),
+            mock.patch("rcurator.sources.resume.os.access", return_value=True),
+            mock.patch("rcurator.sources.resume.subprocess.run", return_value=fake_proc) as m_run,
+            mock.patch("rcurator.sources.resume._parse_pdf_objects") as m_pure,
+        ):
+            evs = parser.parse_bytes(fake_pdf, filename="cv.pdf")
+        m_which.assert_called_once_with("pdftotext")
+        self.assertEqual(m_run.call_args[0][0][0], "/custom/bin/pdftotext")
+        m_pure.assert_not_called()
+        self.assertTrue(any(e.term == "rust" for e in evs))
+
+    def test_strip_latex_removes_begin_end_env_names(self) -> None:
+        tex = (
+            "\\begin{document}\n"
+            "\\section{Skills}\n"
+            "\\begin{itemize}\n"
+            "\\item Rust and eBPF\n"
+            "\\end{itemize}\n"
+            "\\end{document}\n"
+        ).encode("utf-8")
+        evs = ResumeParser().parse_bytes(tex, filename="cv.tex")
+        terms = {e.term for e in evs}
+        self.assertIn("rust", terms)
+        self.assertIn("ebpf", terms)
+        self.assertNotIn("document", terms)
+        self.assertNotIn("itemize", terms)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from rcurator.nlp.tokenizer import (
+    ALL_STOPWORDS,
     TechnicalTokenizer,
     canonicalize_token,
     load_ontology_phrases,
@@ -78,6 +79,7 @@ SECRET_FILENAME_PATTERNS: tuple[str, ...] = (
     "*.pem",
     "*.key",
     "*.p12",
+    "*.token",
     "id_rsa*",
     "id_ed25519*",
     ".netrc",
@@ -85,6 +87,10 @@ SECRET_FILENAME_PATTERNS: tuple[str, ...] = (
     ".pypirc",
     "*.sqlite*",
     "*.db",
+)
+
+_STRICT_SECRET_PATTERNS: tuple[str, ...] = tuple(
+    p for p in SECRET_FILENAME_PATTERNS if p not in {"*secret*", "*token*"}
 )
 
 BINARY_EXTENSIONS: frozenset[str] = frozenset(
@@ -413,6 +419,11 @@ _JS_PACKAGE_ALIASES = {
 }
 
 
+_SOURCE_CODE_EXTENSIONS: frozenset[str] = (
+    frozenset(EXTENSION_LANGUAGE_MAP.keys()) - {".tf"}
+)
+
+
 def scrub_url_userinfo(text: str) -> str:
     """Remove embedded user:password@ credentials from URLs."""
     return _URL_USERINFO_RE.sub(r"\1", text)
@@ -424,20 +435,42 @@ def _sensitive_dirs() -> tuple[Path, ...]:
     return SYSTEM_SENSITIVE_DIRS + home_dirs
 
 
-def is_sensitive_path(path: Path, blocked_dirs: tuple[Path, ...] | None = None) -> bool:
-    """Return True if path is equal to or inside a sensitive system or $HOME directory."""
-    resolved = path.resolve()
-    dirs = blocked_dirs if blocked_dirs is not None else _sensitive_dirs()
-    for blocked in dirs:
+def _is_resolved_sensitive(
+    resolved: Path,
+    home: Path,
+    home_blocked_dirs: tuple[Path, ...],
+) -> bool:
+    for blocked in home_blocked_dirs:
+        if resolved == blocked or resolved.is_relative_to(blocked):
+            return True
+    if home != Path(home.anchor) and (
+        resolved == home or resolved.is_relative_to(home)
+    ):
+        return False
+    for blocked in SYSTEM_SENSITIVE_DIRS:
         if resolved == blocked or resolved.is_relative_to(blocked):
             return True
     return False
 
 
+def is_sensitive_path(path: Path, blocked_dirs: tuple[Path, ...] | None = None) -> bool:
+    """Return True if path is equal to or inside a sensitive system or $HOME directory."""
+    resolved = path.resolve()
+    if blocked_dirs is not None:
+        return any(resolved == blocked or resolved.is_relative_to(blocked) for blocked in blocked_dirs)
+    home = Path.home().resolve()
+    home_dirs = tuple((home / rel).resolve() for rel in HOME_SENSITIVE_REL_DIRS)
+    return _is_resolved_sensitive(resolved, home, home_dirs)
+
+
 def is_secret_filename(filename: str) -> bool:
     """Return True if filename matches the strict secret/credential denylist."""
     low = filename.lower()
-    return any(fnmatch.fnmatch(low, pattern) for pattern in SECRET_FILENAME_PATTERNS)
+    if any(fnmatch.fnmatch(low, pattern) for pattern in _STRICT_SECRET_PATTERNS):
+        return True
+    if fnmatch.fnmatch(low, "*secret*") or fnmatch.fnmatch(low, "*token*"):
+        return Path(low).suffix not in _SOURCE_CODE_EXTENSIONS
+    return False
 
 
 def _read_text_safe(fpath: Path) -> str | None:
@@ -465,8 +498,11 @@ class WorkspaceScanner:
         if target.is_symlink():
             raise PermissionError(f"Refusing to scan symlink root: {target}")
         resolved = target.resolve()
-        blocked_dirs = _sensitive_dirs()
-        if is_sensitive_path(resolved, blocked_dirs):
+        home = Path.home().resolve()
+        home_blocked_dirs = tuple(
+            (home / rel).resolve() for rel in HOME_SENSITIVE_REL_DIRS
+        )
+        if _is_resolved_sensitive(resolved, home, home_blocked_dirs):
             raise PermissionError(f"Refusing to scan sensitive directory: {resolved}")
         if not resolved.exists():
             raise FileNotFoundError(f"Workspace path does not exist: {resolved}")
@@ -493,7 +529,7 @@ class WorkspaceScanner:
                     continue
                 if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
                     continue
-                if is_sensitive_path(dpath, blocked_dirs):
+                if _is_resolved_sensitive(dpath.resolve(), home, home_blocked_dirs):
                     continue
                 inode = (st.st_dev, st.st_ino)
                 if inode in visited_inodes:
@@ -648,7 +684,7 @@ class WorkspaceScanner:
         if low_name.endswith((".yml", ".yaml")):
             text = _read_text_safe(fpath)
             if text is not None:
-                self._extract_yaml_infra(text, low_name, detail, evidences)
+                self._extract_yaml_infra(text, low_name, low_rel, detail, evidences)
             return
 
         suffix = Path(low_name).suffix
@@ -892,15 +928,20 @@ class WorkspaceScanner:
                         self._emit(evidences, base, parts[1], 2.8, detail, "ecosystem")
 
     def _extract_yaml_infra(
-        self, text: str, low_name: str, detail: str, evidences: list[SignalEvidence]
+        self, text: str, low_name: str, low_rel: str, detail: str, evidences: list[SignalEvidence]
     ) -> None:
         k8s_names = {"deployment.yaml", "kustomization.yaml", "chart.yaml", "helmfile.yaml"}
         has_k8s_keys = ("apiVersion:" in text and "kind:" in text)
         if low_name in k8s_names or has_k8s_keys:
             self._emit(evidences, "kubernetes", low_name, 2.8, detail, "ecosystem")
             self._emit(evidences, low_name, low_name, 2.8, detail, "file_indicator")
-        elif low_name in {".gitlab-ci.yml", "ci.yml", "cloudbuild.yaml"}:
+        elif (
+            low_name in {".gitlab-ci.yml", "ci.yml", "cloudbuild.yaml"}
+            or "/.github/workflows/" in f"/{low_rel}"
+        ):
             self._emit(evidences, "ci/cd", low_name, 2.8, detail, "ecosystem")
+            if "/.github/workflows/" in f"/{low_rel}":
+                self._emit(evidences, "github-actions", low_rel, 2.8, detail, "ecosystem")
 
     def _extract_python_imports(
         self, text: str, detail: str, evidences: list[SignalEvidence]
@@ -916,14 +957,26 @@ class WorkspaceScanner:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     mod_name = alias.name.split(".", 1)[0]
-                    if mod_name and mod_name not in stdlib and mod_name not in seen:
+                    if (
+                        mod_name
+                        and mod_name not in stdlib
+                        and mod_name.lower() not in ALL_STOPWORDS
+                        and canonicalize_token(mod_name) not in ALL_STOPWORDS
+                        and mod_name not in seen
+                    ):
                         seen.add(mod_name)
                         self._emit(evidences, mod_name, alias.name, 2.0, detail, "ecosystem")
             elif isinstance(node, ast.ImportFrom):
                 if node.level > 0 or not node.module:
                     continue
                 mod_name = node.module.split(".", 1)[0]
-                if mod_name and mod_name not in stdlib and mod_name not in seen:
+                if (
+                    mod_name
+                    and mod_name not in stdlib
+                    and mod_name.lower() not in ALL_STOPWORDS
+                    and canonicalize_token(mod_name) not in ALL_STOPWORDS
+                    and mod_name not in seen
+                ):
                     seen.add(mod_name)
                     self._emit(evidences, mod_name, node.module, 2.0, detail, "ecosystem")
 
@@ -989,14 +1042,18 @@ class WorkspaceScanner:
             spec = m.group(1).strip()
             if not spec or spec.startswith((".", "/", "node:")):
                 continue
-            if spec in _NODE_BUILTINS:
+            if spec.startswith("@"):
+                parts = spec.split("/")
+                if len(parts) < 2 or not parts[1]:
+                    continue
+                pkg_spec = f"{parts[0]}/{parts[1]}"
+                fallback_name = parts[1]
+            else:
+                pkg_spec = spec.split("/", 1)[0]
+                fallback_name = pkg_spec
+            if pkg_spec.lower() in _NODE_BUILTINS:
                 continue
-            mapped = _JS_PACKAGE_ALIASES.get(spec.lower())
-            if mapped is None:
-                if spec.startswith("@") and "/" in spec:
-                    mapped = spec.split("/", 2)[1]
-                else:
-                    mapped = spec.split("/", 1)[0]
+            mapped = _JS_PACKAGE_ALIASES.get(pkg_spec.lower(), fallback_name)
             if mapped and mapped not in seen:
                 seen.add(mapped)
                 self._emit(evidences, mapped, spec, 2.0, detail, "ecosystem")

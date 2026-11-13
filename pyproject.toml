@@ -22,7 +22,10 @@ py-modules = ["reddit_curator"]
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["rcurator*"]
+namespaces = true
+include = ["rcurator*", "curator_data*", "presets*"]
 
 [tool.setuptools.package-data]
 "rcurator.studio" = ["static/*"]
+"curator_data" = ["*.json"]
+"presets" = ["*.json"]

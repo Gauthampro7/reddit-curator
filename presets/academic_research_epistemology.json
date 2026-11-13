@@ -52,11 +52,6 @@
   ],
   "domain_priming_subreddits": [
     {
-      "name": "AskHistorians",
-      "category": "domain_priming",
-      "description": "Strictly moderated, peer-reviewed-caliber historical Q&A grounded in primary sources."
-    },
-    {
       "name": "PhilosophyofScience",
       "category": "domain_priming",
       "description": "Scientific methodology, epistemology, causality, and demarcation of science."
@@ -87,11 +82,6 @@
       "description": "Formal syntax, phonology, historical linguistics, and cognitive language structure."
     },
     {
-      "name": "AskScience",
-      "category": "domain_priming",
-      "description": "Expert-moderated empirical Q&A across physics, biology, chemistry, and earth sciences."
-    },
-    {
       "name": "LaTeX",
       "category": "domain_priming",
       "description": "Academic typesetting, TikZ vector diagrams, BibLaTeX citations, and macro craft."
@@ -118,7 +108,8 @@
         "AskSocialScience",
         "linguistics",
         "LaTeX",
-        "typst"
+        "typst",
+        "AskScience"
       ]
     }
   ]

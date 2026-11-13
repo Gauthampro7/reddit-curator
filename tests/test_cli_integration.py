@@ -204,6 +204,20 @@ class TestPyprojectAndParser(unittest.TestCase):
         self.assertEqual(project["scripts"]["reddit-curator"], "reddit_curator:main")
         self.assertIn("reddit_curator", data["tool"]["setuptools"]["py-modules"])
         self.assertIn("rcurator*", data["tool"]["setuptools"]["packages"]["find"]["include"])
+        self.assertTrue(data["tool"]["setuptools"]["include-package-data"])
+        self.assertEqual(
+            data["tool"]["setuptools"]["package-data"]["rcurator.studio"],
+            ["static/*"],
+        )
+
+    def test_license_file_declares_mit(self) -> None:
+        license_path = reddit_curator.REPO_ROOT / "LICENSE"
+        self.assertTrue(license_path.is_file())
+        content = license_path.read_text(encoding="utf-8")
+        self.assertIn("MIT License", content)
+        self.assertIn("Copyright (c) 2026 Gautham Saiju", content)
+        self.assertIn("Permission is hereby granted, free of charge", content)
+        self.assertIn("THE SOFTWARE IS PROVIDED \"AS IS\"", content)
 
     def test_parse_args_commands_and_all_31_flags(self) -> None:
         # Default positional command preserves legacy flag-only invocation
@@ -520,6 +534,40 @@ class TestOfflineCLIModes(unittest.TestCase):
         payload = json.loads(out_json)
         self.assertFalse(payload["success"])
         self.assertIn("error", payload)
+
+    def test_human_mode_cdp_failure_emits_evaluator_hint_while_agent_stays_strict_json(self) -> None:
+        from rcurator.cdp_client import CDPError
+
+        for exc in (
+            CDPError("No CDP control WebSocket available on 127.0.0.1:9222."),
+            requests.ConnectionError("Connection refused"),
+            RuntimeError("CDP tab not found on port 9222"),
+        ):
+            with mock.patch("reddit_curator.acquire_reddit_session", side_effect=exc):
+                # Human mode: exit 1 + helpful actionable hint on stderr
+                code_h, out_h, err_h = self._run_cli(["--preset", "systems_engineering", "--one-shot"])
+                self.assertEqual(code_h, 1)
+                self.assertEqual(out_h, "")
+                self.assertIn("--launch-browser", err_h)
+                self.assertIn("--dry-run", err_h)
+                self.assertIn("--audit", err_h)
+                self.assertIn("reddit_curator.py studio", err_h)
+
+                # Agent mode: strict JSON on stdout, zero hint pollution
+                code_a, out_a, err_a = self._run_cli(
+                    ["--preset", "systems_engineering", "--one-shot", "--agent"]
+                )
+                self.assertEqual(code_a, 1)
+                payload = json.loads(out_a)
+                self.assertFalse(payload["success"])
+                self.assertIn("error", payload)
+                self.assertNotIn("--launch-browser", err_a)
+                self.assertNotIn("--launch-browser", out_a)
+
+        # Non-CDP FileNotFoundError (even with 'port' in path) must NOT emit the CDP hint
+        code_f, _, err_f = self._run_cli(["--manifest", "nonexistent_portfolio_manifest.json"])
+        self.assertEqual(code_f, 1)
+        self.assertNotIn("--launch-browser", err_f)
 
 
 class TestMockedCDPEndToEnd(unittest.TestCase):

@@ -19,6 +19,10 @@ reddit-curator = "reddit_curator:main"
 
 [tool.setuptools]
 py-modules = ["reddit_curator"]
+include-package-data = true
 
 [tool.setuptools.packages.find]
 include = ["rcurator*"]
+
+[tool.setuptools.package-data]
+"rcurator.studio" = ["static/*"]

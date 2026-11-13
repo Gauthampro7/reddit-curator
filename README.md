@@ -17,23 +17,39 @@
 * **Velocity-Weighted Golden Ratio Optimizer (40 / 35 / 25):** Optimizes **expected daily impression share** across `aesthetic_leisure` (40%), `cognitive_curiosity` (35%), and `domain_priming` (25%), enforcing a $50\%$ single-subreddit dominance cap and routing high-velocity technical communities into Tier-2 private `custom_feeds`.
 * **Information Diet Health Auditor (`--audit`, `--audit-live`):** Computes Total Variation Drift $\Delta_{\text{GR}}$, Golden Ratio Fidelity Score ($0\text{–}100$), normalized Shannon domain entropy, Gini velocity concentration, and actionable rebalancing suggestions.
 * **Hardened CDP Runtime, Snapshots & Rollback:** Correlated WebSocket JSON-RPC, open-Shadow-DOM **Following** feed lock, full `/subreddits/mine/subscriber` pagination, rate-limit backoff, timestamped `.curator_snapshots/` backups, `--diff` previews, opt-in `--prune`, and 1-command `--rollback`.
-* **Local Web Studio (`studio` / `ui`):** Zero-build, dark-themed local dashboard on `127.0.0.1:8420` protected by `Host`/`Origin` checks, `X-Curator-Token` CSRF protection, and traversal/sensitive-dir guards.
+* **Local Web Studio (`studio` / `ui`):** Zero-build, dark-themed local dashboard on `127.0.0.1:8420` featuring **Easy Mode (default 3-step setup)**, **Advanced Mode (5-tab IR/graph lab)**, **Open Custom JSON** import, an **About & Philosophy** research explorer, and `Host`/`Origin`/CSRF/traversal security guards.
+
+---
+
+## Philosophy: Reverse Passive Marketing & Controlled Engagement
+
+Commercial social platforms shape subconscious attention through **mere exposure** and **incidental exposure** while people assume ads and algorithms do not affect them (**third-person effect**). Meanwhile, rigid app blockers and "digital detoxes" routinely trigger **psychological reactance**, **ironic rebound**, or null well-being gains.
+
+`reddit-curator` flips passive marketing inward: instead of banning leisure feeds or surrendering to algorithmic recommendations, it engineers **controlled engagement** via:
+1. **Following Feed Lock:** Deterministic `sort=BEST&feed=following` navigation bypassing engagement-maximizing home feeds.
+2. **Velocity-Weighted 40 / 35 / 25 Golden Ratio:** Interleaves `40% Aesthetic & Leisure`, `35% Cognitive Curiosity`, and `25% Domain Priming` by expected daily post velocity so casual breaks stay enjoyable while reinforcing mental availability.
+3. **Tier-2 Deep-Focus Custom Feeds:** Routes high-volume technical megasubs into private multireddits so they never drown out smaller, high-signal communities.
+
+Read the full methodology and 17 peer-reviewed citations in [`TECHNIQUE.md`](TECHNIQUE.md) or inside Web Studio's **About & Philosophy** view.
 
 ---
 
 ## Quickstart
 
-### 1. Prerequisites
+### 1. Prerequisites & Editable Install
 
-Python 3.10+ with `requests` and `websockets` (already installed on standard environments or via `pip install -r requirements.txt`):
+Python 3.10+ with `requests` and `websockets` (Fedora / PEP 668 friendly):
 
 ```bash
 pip install -r requirements.txt
+# Optional editable install exposing the `reddit-curator` command from this repo checkout
+# (keeps repo-root `presets/` and `curator_data/` directly accessible alongside `rcurator`):
+pip install -e .
 ```
 
 ### 2. Launch the Local Web Studio (Recommended)
 
-Start the browser-based curation dashboard, preset explorer, resume uploader, diet health charts, and sync console:
+Start the browser-based curation dashboard, **Easy Mode** 3-step setup (default) or **Advanced Mode** 5-tab lab, **Open Custom JSON** manifest importer, **About & Philosophy** explorer, diet health charts, and sync console:
 
 ```bash
 python3 reddit_curator.py studio
@@ -41,7 +57,7 @@ python3 reddit_curator.py studio
 python3 reddit_curator.py --studio
 ```
 
-Open `http://127.0.0.1:8420` (opens automatically unless `--no-open-browser` is passed).
+Open `http://127.0.0.1:8420` (opens automatically unless `--no-open-browser` is passed). In **Easy Mode**, pick one of the 17 topic packs (or click **Open Custom JSON**), inspect the 3-pillar breakdown, and either run an offline **Preview Dry-Run** or connect your browser to apply changes. Toggle **Advanced** in the top bar for multi-source auto-curation (workspace, GitHub, resume PDF), BM25F/PPR explainability, convex preset mixing, entropy audits, and snapshot rollback.
 
 ### 3. Launch a CDP-Enabled Browser (Fedora / Linux RPM & Flatpak)
 
@@ -174,15 +190,28 @@ Every preset in [`presets/`](presets/) is validated against [`manifest.example.j
 
 ---
 
-## Testing & Further Reading
+## Offline Evaluation & College Demo (Zero Reddit Login Needed)
 
-Run the deterministic test suite with zero external test runner requirements:
+Evaluators can inspect the entire methodology, curation engine, Web Studio UI, and automated test suite completely offline with no Reddit credentials or live browser required:
 
 ```bash
+# 1. Run the full offline unit & integration test suite (zero external test runner required)
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+
+# 2. Explore all 17 built-in presets and run an offline Golden Ratio / entropy audit
+python3 reddit_curator.py --list-presets
+python3 reddit_curator.py --preset systems_engineering --audit
+
+# 3. Preview an offline dry-run plan and multi-source deterministic manifest generation
+python3 reddit_curator.py --preset systems_engineering --dry-run
+python3 reddit_curator.py --from-workspace . --query "systems distributed databases" --audit
+
+# 4. Launch Web Studio to inspect Easy/Advanced modes, Open Custom JSON,
+#    offline Dry-Run preview, and the About & Philosophy 17-source explorer
+python3 reddit_curator.py studio
 ```
 
-* [`TECHNIQUE.md`](TECHNIQUE.md) — Cognitive psychology foundations (Availability Heuristic, Context Interleaving, Golden Ratio)
+* [`TECHNIQUE.md`](TECHNIQUE.md) — Reverse Passive Marketing, Controlled Engagement, 40/35/25 Golden Ratio & 17 verified peer-reviewed citations
 * [`ALGORITHMS.md`](ALGORITHMS.md) — Formal mathematical specifications for tokenization, BM25F/TF-IDF, Bipartite PPR, velocity optimization, and auditing
 * [`ARCHITECTURE.md`](ARCHITECTURE.md) — Modular package design, CDP/OAuth hardening, Mermaid diagrams, and Web Studio security model
 
@@ -190,4 +219,4 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 
 ## License
 
-MIT
+[MIT](LICENSE) — Copyright (c) 2026 Gautham Saiju

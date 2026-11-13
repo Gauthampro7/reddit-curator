@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>reddit-curator // Web Studio v2.0</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand-cluster">
+      <div class="brand-glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 21 7 21 17 12 22 3 17 3 7"></polygon>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">reddit-curator <span class="badge badge-accent">studio v2.0</span></div>
+        <div class="brand-sub">Deterministic Cognitive Diet &amp; Graph Curation Workbench</div>
+      </div>
+    </div>
+
+    <div class="status-cluster">
+      <span id="pill-cdp" class="status-pill status-off">CDP: offline</span>
+      <span id="pill-auth" class="status-pill status-off">Reddit: disconnected</span>
+      <span id="pill-ontology" class="status-pill status-info">Ontology: --</span>
+      <button id="btn-export-manifest" type="button" class="btn btn-secondary btn-sm" title="Download active manifest.json (Ctrl+E)">Export JSON</button>
+    </div>
+  </header>
+
+  <div class="active-bar">
+    <div class="active-bar-left">
+      <span class="mono-label">ACTIVE MANIFEST</span>
+      <strong id="active-manifest-name">No manifest loaded</strong>
+      <span id="active-manifest-counts" class="muted-mono">0 tier-1 · 0 custom feeds</span>
+    </div>
+    <div class="active-bar-actions">
+      <button id="btn-quick-audit" type="button" class="btn btn-ghost btn-sm">Audit Active</button>
+      <button id="btn-quick-inspect" type="button" class="btn btn-ghost btn-sm">Inspect Graph</button>
+      <button id="btn-quick-console" type="button" class="btn btn-primary btn-sm">Sync / Diff</button>
+    </div>
+  </div>
+
+  <nav class="tabbar" role="tablist" aria-label="Studio Views">
+    <button class="tab-btn active" role="tab" aria-selected="true" data-tab="lab">
+      <span class="tab-key">1</span> Auto-Curate Lab
+    </button>
+    <button class="tab-btn" role="tab" aria-selected="false" data-tab="inspector">
+      <span class="tab-key">2</span> Explainability &amp; Graph
+    </button>
+    <button class="tab-btn" role="tab" aria-selected="false" data-tab="gallery">
+      <span class="tab-key">3</span> 17-Preset Gallery &amp; Mixer
+    </button>
+    <button class="tab-btn" role="tab" aria-selected="false" data-tab="analytics">
+      <span class="tab-key">4</span> Diet Health &amp; Entropy
+    </button>
+    <button class="tab-btn" role="tab" aria-selected="false" data-tab="console">
+      <span class="tab-key">5</span> Sync, Browser &amp; Rollback
+    </button>
+  </nav>
+
+  <main class="studio-main">
+    <!-- VIEW 1: AUTO-CURATE LAB -->
+    <section id="view-lab" class="view active" aria-label="Auto-Curate Lab">
+      <div class="grid-2">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Multi-Source Signal Fusion</h2>
+            <span class="badge">Zero-AI · Local IR + PPR</span>
+          </div>
+          <p class="panel-desc">Fuse technical signals from your local resume, source workspace, GitHub profile, and explicit keywords into a velocity-balanced Golden Ratio diet.</p>
+
+          <div class="field-group">
+            <label class="field-label" for="resume-file-input">Resume / CV Parser (In-Memory Only, &le; 15 MB)</label>
+            <div id="resume-dropzone" class="dropzone" tabindex="0">
+              <input id="resume-file-input" type="file" accept=".pdf,.txt,.md,.tex" hidden>
+              <div class="dropzone-title">Drop PDF / TXT / MD / TEX here or click to browse</div>
+              <div id="resume-status" class="dropzone-sub">Processed strictly in memory · Never written to disk</div>
+            </div>
+            <div id="resume-terms-preview" class="chip-row"></div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="input-workspace">Local Workspace Directory</label>
+            <input id="input-workspace" class="input" type="text" placeholder="e.g. ~/base or /tmp/project" autocomplete="off">
+            <div class="field-hint">Scans manifests, code imports &amp; configs inside $HOME or /tmp (secrets &amp; ~/.ssh blocked).</div>
+          </div>
+
+          <div class="grid-2-tight">
+            <div class="field-group">
+              <label class="field-label" for="input-github-user">GitHub Username</label>
+              <input id="input-github-user" class="input" type="text" placeholder="e.g. torvalds" autocomplete="off">
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="input-github-token">GitHub Token (Optional)</label>
+              <input id="input-github-token" class="input" type="password" placeholder="ghp_... (optional)" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="input-query">Technical Focus Keywords</label>
+            <input id="input-query" class="input" type="text" placeholder="e.g. rust compilers ebpf linux hyprland duckdb">
+            <div id="query-presets" class="chip-row">
+              <button type="button" class="chip chip-btn" data-query="rust compilers llvm ebpf linux kernel">rust + compilers + kernel</button>
+              <button type="button" class="chip chip-btn" data-query="python fastapi duckdb postgresql kubernetes">backend + data systems</button>
+              <button type="button" class="chip chip-btn" data-query="hyprland fedora nixos neovim wayland">fedora + hyprland ricing</button>
+              <button type="button" class="chip chip-btn" data-query="pytorch llm quantization cuda triton">local ml + inference</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Golden Ratio &amp; Optimizer Targets</h2>
+            <span class="badge badge-cog">Simplex Constrained</span>
+          </div>
+          <p class="panel-desc">Target velocity-weighted impression shares automatically normalize to 100%. High-velocity domain communities overflow safely into Tier-2 private Custom Feeds.</p>
+
+          <div class="field-group">
+            <label class="field-label" for="input-manifest-name">Generated Preset Name</label>
+            <input id="input-manifest-name" class="input" type="text" value="Auto-Generated Curation">
+          </div>
+
+          <div class="slider-card">
+            <div class="slider-row">
+              <span class="pillar-dot pillar-aes"></span>
+              <label for="slider-aes">Aesthetic &amp; Leisure Target</label>
+              <span id="val-aes" class="mono-val">40%</span>
+            </div>
+            <input id="slider-aes" class="range range-aes" type="range" min="10" max="80" value="40">
+
+            <div class="slider-row">
+              <span class="pillar-dot pillar-cog"></span>
+              <label for="slider-cog">Cognitive Curiosity Target</label>
+              <span id="val-cog" class="mono-val">35%</span>
+            </div>
+            <input id="slider-cog" class="range range-cog" type="range" min="10" max="80" value="35">
+
+            <div class="slider-row">
+              <span class="pillar-dot pillar-dom"></span>
+              <label for="slider-dom">Domain Priming Target</label>
+              <span id="val-dom" class="mono-val">25%</span>
+            </div>
+            <input id="slider-dom" class="range range-dom" type="range" min="10" max="80" value="25">
+          </div>
+
+          <div class="slider-card">
+            <div class="slider-row">
+              <label for="slider-tier1">Tier-1 Following Feed Size</label>
+              <span id="val-tier1" class="mono-val">18 subs</span>
+            </div>
+            <input id="slider-tier1" class="range" type="range" min="6" max="28" value="18">
+          </div>
+
+          <label class="checkbox-row">
+            <input id="check-discover-online" type="checkbox">
+            <span>Enable optional Reddit online subreddit discovery (requires active CDP session)</span>
+          </label>
+
+          <div class="action-row">
+            <button id="btn-generate" type="button" class="btn btn-primary btn-lg">Generate Personalized Preset</button>
+            <button id="btn-reset-ratio" type="button" class="btn btn-ghost">Reset 40/35/25</button>
+          </div>
+
+          <div id="lab-result-banner" class="result-banner hidden"></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- VIEW 2: EXPLAINABILITY & KNOWLEDGE GRAPH INSPECTOR -->
+    <section id="view-inspector" class="view" aria-label="Explainability and Knowledge Graph Inspector">
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Explainability &amp; Knowledge Graph Inspector</h2>
+          <div id="inspector-algo-badge" class="badge">Awaiting manifest</div>
+        </div>
+        <div id="inspector-top-terms" class="chip-row"></div>
+
+        <div class="toolbar">
+          <input id="inspector-search" class="input input-sm" type="search" placeholder="Filter by subreddit, term, or bridge...">
+          <select id="inspector-pillar" class="input input-sm">
+            <option value="all">All Pillars</option>
+            <option value="aesthetic_leisure">Aesthetic Leisure</option>
+            <option value="cognitive_curiosity">Cognitive Curiosity</option>
+            <option value="domain_priming">Domain Priming</option>
+          </select>
+          <select id="inspector-tier" class="input input-sm">
+            <option value="all">All Tiers</option>
+            <option value="tier1">Tier-1 Following</option>
+            <option value="tier2">Tier-2 Custom Feed</option>
+          </select>
+        </div>
+
+        <div id="inspector-cards" class="cards-grid"></div>
+      </article>
+    </section>
+
+    <!-- VIEW 3: 17-PRESET GALLERY & CONVEX MIXER -->
+    <section id="view-gallery" class="view" aria-label="Preset Gallery and Convex Mixer">
+      <div class="grid-gallery">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>17 Domain Presets</h2>
+            <input id="gallery-search" class="input input-sm" type="search" placeholder="Search presets...">
+          </div>
+          <div id="preset-gallery-grid" class="preset-grid"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Convex Preset Mixer</h2>
+            <span class="badge badge-dom">Simplex Blend</span>
+          </div>
+          <p class="panel-desc">Select presets from the gallery (or add below) to blend multiple domain diets with convex weights and re-optimize via Golden Ratio velocity balancing.</p>
+
+          <div class="toolbar">
+            <select id="mixer-preset-select" class="input input-sm"></select>
+            <button id="btn-mixer-add" type="button" class="btn btn-secondary btn-sm">+ Add Preset</button>
+          </div>
+
+          <div id="mixer-weights-list" class="mixer-list"></div>
+
+          <div class="action-row">
+            <button id="btn-mix-blend" type="button" class="btn btn-primary">Blend Presets</button>
+            <button id="btn-mix-clear" type="button" class="btn btn-ghost">Clear</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- VIEW 4: DIET HEALTH & ENTROPY ANALYTICS -->
+    <section id="view-analytics" class="view" aria-label="Diet Health and Entropy Analytics">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Diet Health &amp; Shannon Entropy Auditor</h2>
+          <div class="action-row-tight">
+            <button id="btn-audit-manifest" type="button" class="btn btn-primary btn-sm">Audit Active Manifest</button>
+            <button id="btn-audit-live" type="button" class="btn btn-secondary btn-sm">Audit Live Account</button>
+          </div>
+        </div>
+
+        <div class="analytics-top">
+          <div class="chart-card">
+            <h3>Target vs Actual Velocity Share</h3>
+            <div id="svg-donut-container" class="svg-stage"></div>
+            <div id="svg-donut-legend" class="legend-row"></div>
+          </div>
+
+          <div class="chart-card">
+            <h3>Composite Health &amp; Metrics</h3>
+            <div id="health-kpi-grid" class="kpi-grid"></div>
+          </div>
+        </div>
+
+        <div class="analytics-bottom">
+          <div class="chart-card">
+            <h3>Rebalancing Prescriptions</h3>
+            <ul id="audit-recommendations" class="rec-list"></ul>
+          </div>
+          <div class="chart-card">
+            <h3>Per-Subreddit Velocity Share</h3>
+            <div id="audit-shares-table" class="table-wrap"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 5: LIVE SYNC, BROWSER LAUNCHER & ROLLBACK CONSOLE -->
+    <section id="view-console" class="view" aria-label="Live Sync, Browser Launcher and Rollback Console">
+      <div class="grid-2">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Browser Launcher &amp; CDP</h2>
+            <span id="console-cdp-badge" class="badge">Port 9222</span>
+          </div>
+          <p class="panel-desc">Launch an isolated Fedora Chrome/Chromium/Brave debugging session with Wayland support and attach to your active Reddit tab.</p>
+
+          <div class="grid-2-tight">
+            <div class="field-group">
+              <label class="field-label" for="select-browser">Detected Browser</label>
+              <select id="select-browser" class="input">
+                <option value="">Auto-detect best browser</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="input-cdp-port">CDP Port</label>
+              <input id="input-cdp-port" class="input" type="number" min="1024" max="65535" value="9222">
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button id="btn-launch-browser" type="button" class="btn btn-primary">Launch Browser</button>
+            <button id="btn-refresh-status" type="button" class="btn btn-secondary">Refresh Status</button>
+          </div>
+          <pre id="browser-launch-log" class="code-log">Ready.</pre>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Live Diff &amp; Idempotent Sync</h2>
+            <span class="badge badge-aes">Pre-Sync Snapshot</span>
+          </div>
+          <p class="panel-desc">Preview subscription and Custom Feed deltas before touching Reddit. Unsubscribing unmanaged communities is opt-in only.</p>
+
+          <div class="grid-2-tight">
+            <label class="checkbox-row">
+              <input id="check-prune" type="checkbox">
+              <span>Prune unmanaged subscriptions (--prune)</span>
+            </label>
+            <div class="field-group">
+              <label class="field-label" for="input-keep">Keep Allowlist (CSV)</label>
+              <input id="input-keep" class="input input-sm" type="text" placeholder="e.g. Fedora,rust">
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button id="btn-diff" type="button" class="btn btn-secondary">Preview Diff</button>
+            <button id="btn-sync-dry" type="button" class="btn btn-ghost">Dry-Run Sync</button>
+            <button id="btn-sync-live" type="button" class="btn btn-primary">One-Shot Sync</button>
+          </div>
+          <div id="diff-preview-box" class="diff-box"></div>
+        </article>
+      </div>
+
+      <article class="panel mt-gap">
+        <div class="panel-head">
+          <h2>Snapshot History &amp; Rollback</h2>
+          <button id="btn-refresh-snapshots" type="button" class="btn btn-ghost btn-sm">Refresh Snapshots</button>
+        </div>
+        <div id="snapshots-table-wrap" class="table-wrap"></div>
+      </article>
+    </section>
+  </main>
+
+  <div id="toast-rack" class="toast-rack" aria-live="polite"></div>
+</body>
+</html>

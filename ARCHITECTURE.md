@@ -181,7 +181,7 @@ Served via stdlib `http.server.ThreadingHTTPServer` bound strictly to `127.0.0.1
 
 * `GET /`, `GET /static/<asset>`
 * `GET /api/status`, `GET /api/presets`, `GET /api/presets/<name>`, `GET /api/snapshots`
-* `POST /api/generate`, `POST /api/upload-resume`, `POST /api/mix`, `POST /api/audit`, `POST /api/diff`, `POST /api/sync`, `POST /api/rollback`, `POST /api/launch-browser`
+* `POST /api/generate`, `POST /api/upload-resume`, `POST /api/import-manifest`, `POST /api/mix`, `POST /api/audit`, `POST /api/diff`, `POST /api/sync`, `POST /api/rollback`, `POST /api/launch-browser`
 
 ---
 

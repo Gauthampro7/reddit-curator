@@ -757,6 +757,49 @@ class DefaultStudioBackend:
         normalized = normalize_manifest(manifest, ontology=ontology)
         return FeedHealthAuditor(ontology).audit_manifest(normalized)
 
+    def import_manifest(
+        self,
+        manifest: dict[str, Any],
+        filename: str | None = None,
+    ) -> dict[str, Any]:
+        """Validate, normalize, and audit a user-supplied custom JSON manifest."""
+        if not isinstance(manifest, dict):
+            raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "Manifest must be a JSON object.")
+
+        has_entries = any(
+            isinstance(manifest.get(k), list) and len(manifest.get(k) or []) > 0
+            for k in (
+                "anchor_subreddits",
+                "domain_priming_subreddits",
+                "tier1_systems_subreddits",
+                "custom_feeds",
+            )
+        )
+        if not has_entries:
+            raise StudioHTTPError(
+                HTTPStatus.BAD_REQUEST,
+                "Manifest JSON must contain at least one subreddit or custom feed entry.",
+            )
+
+        try:
+            from rcurator.analytics import FeedHealthAuditor
+            from rcurator.engine.ontology import OntologyRepository, normalize_manifest
+        except ImportError as exc:
+            raise StudioHTTPError(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"Curation engine unavailable: {exc}",
+            ) from exc
+
+        ontology = OntologyRepository.load(self.ontology_path)
+        normalized = normalize_manifest(manifest, ontology=ontology)
+        audit = FeedHealthAuditor(ontology).audit_manifest(normalized)
+        safe_name = sanitize_filename(filename, default="custom_manifest.json")
+        return {
+            "filename": safe_name,
+            "manifest": normalized,
+            "audit": audit,
+        }
+
     def audit_live(
         self,
         target_ratio: tuple[int, int, int] = (40, 35, 25),
@@ -1160,6 +1203,14 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                     validate_safe_identifier(str(preset_key), label="preset name")
                 target_ratio = _normalize_ratio(payload.get("target_ratio"))
                 result = self.studio_server.backend.mix_presets(weights, target_ratio=target_ratio)
+                self._send_json(HTTPStatus.OK, result)
+                return
+
+            if path == "/api/import-manifest":
+                manifest = _extract_manifest(payload)
+                raw_filename = payload.get("filename")
+                filename = str(raw_filename) if isinstance(raw_filename, str) else None
+                result = self.studio_server.backend.import_manifest(manifest, filename=filename)
                 self._send_json(HTTPStatus.OK, result)
                 return
 

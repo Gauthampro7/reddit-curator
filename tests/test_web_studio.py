@@ -140,6 +140,17 @@ class MockStudioBackend(DefaultStudioBackend):
         manifest["name"] = f"Mixed: {' + '.join(weights.keys())}"
         return {"manifest": manifest}
 
+    def import_manifest(
+        self,
+        manifest: dict[str, Any],
+        filename: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "filename": filename or "custom_manifest.json",
+            "manifest": manifest,
+            "audit": self.audit_manifest(manifest),
+        }
+
     def audit_manifest(self, manifest: dict[str, Any]) -> dict[str, Any]:
         return {
             "subreddit_count": 18,
@@ -516,6 +527,18 @@ class TestWebStudioServer(unittest.TestCase):
         self.assertEqual(st_mix, 200)
         self.assertIn("manifest", mix_res)
 
+        st_imp, imp_res = self._post_json(
+            "/api/import-manifest",
+            {"manifest": manifest, "filename": "my_custom.json"},
+        )
+        self.assertEqual(st_imp, 200)
+        self.assertEqual(imp_res["filename"], "my_custom.json")
+        self.assertEqual(imp_res["manifest"]["name"], manifest["name"])
+        self.assertGreater(imp_res["audit"]["composite_health_score"], 0)
+
+        st_imp_bad, _ = self._post_json("/api/import-manifest", {"foo": "bar"})
+        self.assertEqual(st_imp_bad, 400)
+
         st_audit, audit_res = self._post_json("/api/audit", {"manifest": manifest})
         self.assertEqual(st_audit, 200)
         self.assertGreater(audit_res["audit"]["composite_health_score"], 0)
@@ -572,6 +595,9 @@ class TestWebStudioServer(unittest.TestCase):
         self.assertNotIn('setAttribute("style"', app_js)
         self.assertNotIn("setAttribute('style'", app_js)
         self.assertIn("b.browser_id", app_js)
+        self.assertIn("btn-import-manifest", index_html)
+        self.assertIn("import-manifest-input", index_html)
+        self.assertIn("/api/import-manifest", app_js)
 
         for asset_name, text in (("index.html", index_html), ("styles.css", styles_css), ("app.js", app_js)):
             scrubbed = text.replace("http://www.w3.org/2000/svg", "")
@@ -607,6 +633,14 @@ class TestWebStudioServer(unittest.TestCase):
         loaded = real_backend.get_preset("linux_ricing_opensource")
         self.assertEqual(loaded["preset_id"], "linux_ricing_opensource")
         self.assertIn("anchor_subreddits", loaded)
+
+        legacy_raw = json.loads((REPO_ROOT / "curation_manifest.json").read_text(encoding="utf-8"))
+        imported = real_backend.import_manifest(legacy_raw, filename="../curation_manifest.json")
+        self.assertEqual(imported["filename"], "curation_manifest.json")
+        self.assertIn("domain_priming_subreddits", imported["manifest"])
+        self.assertGreater(imported["audit"]["composite_health_score"], 0)
+        with self.assertRaises(StudioHTTPError):
+            real_backend.import_manifest({"name": "empty"})
 
 
 if __name__ == "__main__":

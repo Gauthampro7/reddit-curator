@@ -210,6 +210,44 @@
     showToast("Downloaded manifest.json");
   }
 
+  async function handleImportManifestFile(file) {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      showToast("Manifest JSON exceeds 8 MB limit.", "err");
+      return;
+    }
+    let parsed;
+    try {
+      const text = await file.text();
+      parsed = JSON.parse(text);
+    } catch (err) {
+      showToast(`Invalid JSON file: ${err.message}`, "err");
+      return;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      showToast("Manifest file must contain a JSON object.", "err");
+      return;
+    }
+    try {
+      const res = await apiPost("/api/import-manifest", {
+        manifest: parsed,
+        filename: file.name || "custom_manifest.json",
+      });
+      if (res.manifest) {
+        setActiveManifest(res.manifest, true);
+        if (res.audit) {
+          state.lastAudit = res.audit;
+          renderAnalytics(res.audit);
+        } else {
+          await auditActiveManifest();
+        }
+        showToast(`Opened custom JSON: ${res.manifest.name || file.name}`);
+      }
+    } catch (err) {
+      showToast(`Import failed: ${err.message}`, "err");
+    }
+  }
+
   function getCdpPort() {
     const input = document.getElementById("input-cdp-port");
     const parsed = Number((input && input.value) || 9222);
@@ -1176,6 +1214,16 @@
       });
     });
 
+    const importInput = document.getElementById("import-manifest-input");
+    document.getElementById("btn-import-manifest").addEventListener("click", () => {
+      importInput.value = "";
+      importInput.click();
+    });
+    importInput.addEventListener("change", () => {
+      if (importInput.files && importInput.files[0]) {
+        handleImportManifestFile(importInput.files[0]);
+      }
+    });
     document.getElementById("btn-export-manifest").addEventListener("click", exportManifest);
     document.getElementById("btn-quick-audit").addEventListener("click", () => {
       switchTab("analytics");
@@ -1210,6 +1258,13 @@
     document.getElementById("btn-refresh-snapshots").addEventListener("click", loadSnapshots);
 
     document.addEventListener("keydown", (ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "o") {
+        ev.preventDefault();
+        const importInputEl = document.getElementById("import-manifest-input");
+        importInputEl.value = "";
+        importInputEl.click();
+        return;
+      }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "e") {
         ev.preventDefault();
         exportManifest();

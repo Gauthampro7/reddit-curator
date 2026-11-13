@@ -1652,19 +1652,51 @@
     });
   }
 
+  function normalizeFailureName(item, fallback = "") {
+    if (item && typeof item === "object") {
+      return String(item.name || item.subreddit || item.feed_name || item.error || fallback).trim();
+    }
+    return String(item || fallback).trim();
+  }
+
+  function normalizeFailureError(err, fallback = "error") {
+    if (err === null || err === undefined || err === "") return fallback;
+    if (typeof err === "object") {
+      return String(err.error || err.message || err.detail || JSON.stringify(err));
+    }
+    return String(err);
+  }
+
   function extractSyncFailures(sync) {
     const s = sync || {};
     const subInfo = s.subscriptions || {};
-    const failedSubs = Array.isArray(subInfo.failed) ? subInfo.failed : [];
+    const rawFailedSubs = Array.isArray(subInfo.failed) ? subInfo.failed : [];
+    const failedSubs = rawFailedSubs
+      .map((x) => normalizeFailureName(x))
+      .filter(Boolean);
     const customFeeds = s.custom_feeds || {};
     const failedFeeds = [];
-    for (const [fname, fdata] of Object.entries(customFeeds)) {
-      if (fdata && fdata.status === "failed") {
-        failedFeeds.push({ name: fname, error: fdata.error || `HTTP ${fdata.http_code || "error"}` });
+    if (Array.isArray(customFeeds)) {
+      for (const fdata of customFeeds) {
+        if (fdata && typeof fdata === "object" && fdata.status === "failed") {
+          const fname = normalizeFailureName(fdata, "custom_feed");
+          const ferr = normalizeFailureError(fdata.error, `HTTP ${fdata.http_code || "error"}`);
+          failedFeeds.push({ name: fname, error: ferr });
+        }
+      }
+    } else if (customFeeds && typeof customFeeds === "object") {
+      for (const [fname, fdata] of Object.entries(customFeeds)) {
+        if (fdata && fdata.status === "failed") {
+          const resolvedName = String(fdata.name || fdata.feed_name || fname || fdata.error || "custom_feed").trim();
+          const ferr = normalizeFailureError(fdata.error, `HTTP ${fdata.http_code || "error"}`);
+          failedFeeds.push({ name: resolvedName, error: ferr });
+        }
       }
     }
     const followingFailed = Boolean(s.following_feed && s.following_feed.success === false);
-    const warnings = Array.isArray(s.warnings) ? s.warnings : [];
+    const warnings = (Array.isArray(s.warnings) ? s.warnings : [])
+      .map((w) => (w && typeof w === "object" ? normalizeFailureError(w, "") : String(w || "")))
+      .filter(Boolean);
     const hasFailures = Boolean(
       s.has_failures ||
       failedSubs.length > 0 ||
@@ -2550,8 +2582,13 @@
           cdp_port: cdpPort,
         });
         const box = document.getElementById("diff-preview-box");
-        renderRollbackCard(box, res.rollback || res);
-        showToast(dryRun ? `Dry-run rollback previewed (${snapshotId})` : `Rolled back to ${snapshotId}`);
+        const rb = res.rollback || res;
+        renderRollbackCard(box, rb);
+        if ((res && res.rollback && res.rollback.success === false) || (rb && rb.success === false)) {
+          showToast(`Rollback finished with errors (${snapshotId}) — review details`, "err");
+        } else {
+          showToast(dryRun ? `Dry-run rollback previewed (${snapshotId})` : `Rolled back to ${snapshotId}`);
+        }
         if (!dryRun) {
           await loadSnapshots();
           await refreshStatus(true);

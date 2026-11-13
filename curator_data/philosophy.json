@@ -1,0 +1,343 @@
+{
+  "version": "2.0.0",
+  "title": "Reverse Passive Marketing & Controlled Engagement",
+  "motto": "You do not need to quit the scroll to reclaim your mind — flip passive ambient marketing into deliberate cognitive priming.",
+  "original_spark": {
+    "heading": "The Spark: BTL Conditioning in Reverse",
+    "summary": "Commercial below-the-line (BTL) marketing and algorithmic social feeds succeed without persuading you directly: they place repeated, low-friction impressions in your peripheral attention until a brand or narrative enters your mental consideration set effortlessly. reddit-curator starts from a simple inversion — if ambient repetition shapes what we notice, recall, and prioritize, we can engineer that exact passive loop to serve our own curiosity, aesthetic calm, and craft."
+  },
+  "core_inversion": {
+    "heading": "Core Thesis: Reverse Passive Marketing",
+    "summary": "Instead of fighting human attentional mechanics with willpower, restructure the feed itself so every casual scroll delivers a velocity-balanced diet across Aesthetic Leisure (40%), Cognitive Curiosity (35%), and Domain Priming (25%), while locking Home away from opaque algorithmic recommendations.",
+    "mechanisms": [
+      {
+        "name": "Mere Exposure & Incidental Priming",
+        "description": "Repeated low-friction exposure builds perceptual fluency and mental availability even without conscious study (Zajonc, 1968; Bornstein, 1989; Janiszewski, 1993; Shapiro et al., 1997)."
+      },
+      {
+        "name": "Overcoming the Third-Person Blind Spot",
+        "description": "People routinely assume media nudges sway others while leaving themselves untouched (Davison, 1983; Sun et al., 2008). Making feed weights explicit replaces hidden bias with transparent user-authored intent."
+      },
+      {
+        "name": "Availability & Conceptual Priming",
+        "description": "What surfaces easily in daily memory governs how we frame problems later (Tversky & Kahneman, 1973; Tulving & Schacter, 1990). Curating high-signal domain communities primes useful mental models passively."
+      }
+    ]
+  },
+  "harm_reduction_thesis": {
+    "heading": "Controlled Engagement Over Prohibition",
+    "summary": "Hard bans, aggressive app blockers, and cold-turkey digital detoxes treat attention as an all-or-nothing moral test — and consistently underperform or rebound. Controlled curation preserves autonomy while eliminating algorithmic rage-bait and monoculture fatigue.",
+    "why_bans_backfire": [
+      {
+        "name": "Psychological Reactance",
+        "description": "Forbidding a valued freedom triggers an aversive motivational pushback that makes the restricted feed more desirable (Brehm, 1966; Rosenberg & Siegel, 2018)."
+      },
+      {
+        "name": "Ironic Process Rebound",
+        "description": "Deliberate thought or habit suppression activates a background monitoring loop that heightens cue accessibility and sparks post-suppression binges under fatigue (Wegner, 1994)."
+      },
+      {
+        "name": "Null & Mixed Detox Outcomes",
+        "description": "Systematic reviews and preregistered experiments show short abstinence breaks often yield inconsistent or null well-being gains when the underlying feed environment stays uncurated (Radtke et al., 2022; Hall et al., 2021; Przybylski et al., 2021)."
+      },
+      {
+        "name": "Architecture Over Abstinence",
+        "description": "Passive consumption of uncurated feeds harms subjective well-being, whereas active, interest-aligned engagement supports connection and agency (Verduyn et al., 2017)."
+      }
+    ],
+    "controls": [
+      {
+        "name": "Following Feed Lock",
+        "description": "Pins your active Reddit Home view to subscribed communities only, cutting out opaque algorithmic insertion."
+      },
+      {
+        "name": "Velocity-Weighted 40/35/25 Golden Ratio",
+        "description": "Balances expected daily post volume — not just raw subreddit counts — so high-traffic engineering subs never drown out calm or broad curiosity."
+      },
+      {
+        "name": "Context Interleaving",
+        "description": "Mixes three distinct cognitive pillars in Tier 1 rather than blocking into a single topic monoculture, improving inductive transfer (Kornell & Bjork, 2008)."
+      },
+      {
+        "name": "Tier-2 Deep-Focus Custom Feeds",
+        "description": "Routes high-velocity domain communities into private on-demand Custom Feeds so deliberate deep reading stays cleanly separated from casual ambient browsing."
+      }
+    ]
+  },
+  "global_statistics": [
+    {
+      "id": "stat_social_identities",
+      "value": "5.24B",
+      "label": "Active Social Media User Identities",
+      "detail": "63.9% of the total global population (measures active user identities, which may not represent unique individuals).",
+      "source": "Kemp (2025) — DataReportal Digital 2025",
+      "year": 2025,
+      "url": "https://datareportal.com/reports/digital-2025-global-overview-report"
+    },
+    {
+      "id": "stat_internet_users",
+      "value": "5.56B",
+      "label": "Global Internet Users",
+      "detail": "67.9% of the global population online — making feed architecture a population-scale cognitive environment.",
+      "source": "Kemp (2025) — DataReportal Digital 2025",
+      "year": 2025,
+      "url": "https://datareportal.com/reports/digital-2025-global-overview-report"
+    },
+    {
+      "id": "stat_daily_time",
+      "value": "2h 21m / day",
+      "label": "Average Daily Social Media Exposure",
+      "detail": "Average daily time spent on social media by internet users aged 16+, spanning 6.8 platforms per month.",
+      "source": "Kemp (2025) — DataReportal Digital 2025",
+      "year": 2025,
+      "url": "https://datareportal.com/reports/digital-2025-global-overview-report"
+    },
+    {
+      "id": "stat_pew_reddit",
+      "value": "26% / 84%",
+      "label": "U.S. Adult Platform Reach (Reddit / YouTube)",
+      "detail": "26% of U.S. adults use Reddit (with higher adoption under 30) alongside 84% using YouTube.",
+      "source": "Gottfried & Park (2025) — Pew Research Center",
+      "year": 2025,
+      "url": "https://www.pewresearch.org/internet/fact-sheet/social-media/"
+    }
+  ],
+  "pillars": [
+    {
+      "id": "aesthetic_leisure",
+      "name": "Aesthetic & Leisure Anchors",
+      "target_pct": 40,
+      "tier": "Tier 1 (Following Feed)",
+      "role": "Preserves joy, visual craft, and low-stress decompression so opening Reddit never feels like an obligation or chore."
+    },
+    {
+      "id": "cognitive_curiosity",
+      "name": "Cognitive Curiosity & Synthesis",
+      "target_pct": 35,
+      "tier": "Tier 1 (Following Feed)",
+      "role": "Cross-disciplinary science, history, and long-form rigor that broadens mental models and sustains interleaved variety."
+    },
+    {
+      "id": "domain_priming",
+      "name": "Domain Priming & Craft",
+      "target_pct": 25,
+      "tier": "Tier 1 (25% cap) + Tier 2 Custom Feeds",
+      "role": "Delivers ambient vocabulary and architectural awareness in Tier 1 while offloading high-velocity deep study to private Custom Feeds."
+    }
+  ],
+  "themes": [
+    { "id": "all", "label": "All Sources" },
+    { "id": "global_scale", "label": "Global Scale" },
+    { "id": "passive_marketing", "label": "Passive Marketing & Mere Exposure" },
+    { "id": "third_person_effect", "label": "Third-Person Blind Spot" },
+    { "id": "priming_availability", "label": "Priming & Availability" },
+    { "id": "controlled_engagement", "label": "Controlled Engagement vs. Detox" },
+    { "id": "context_interleaving", "label": "Context Interleaving" }
+  ],
+  "references": [
+    {
+      "id": "kemp_2025",
+      "theme": "global_scale",
+      "theme_label": "Global Scale",
+      "authors": "Kemp, S.",
+      "year": 2025,
+      "title": "Digital 2025: Global Overview Report",
+      "publication": "DataReportal (in partnership with We Are Social & Meltwater)",
+      "doi": null,
+      "key_finding": "Documents 5.24 billion active social media user identities (63.9% of world population; active user identities may not represent unique individuals), 5.56 billion global internet users (67.9%), and an average of 2 hours 21 minutes per day across 6.8 platforms per month among internet users aged 16+.",
+      "url": "https://datareportal.com/reports/digital-2025-global-overview-report"
+    },
+    {
+      "id": "gottfried_park_2025",
+      "theme": "global_scale",
+      "theme_label": "Global Scale",
+      "authors": "Gottfried, J., & Park, E.",
+      "year": 2025,
+      "title": "Americans' Social Media Use 2025",
+      "publication": "Pew Research Center",
+      "doi": null,
+      "key_finding": "Reports that 84% of U.S. adults use YouTube and 26% use Reddit, showing sustained multi-year growth for Reddit as an interest-driven community platform.",
+      "url": "https://www.pewresearch.org/internet/fact-sheet/social-media/"
+    },
+    {
+      "id": "zajonc_1968",
+      "theme": "passive_marketing",
+      "theme_label": "Passive Marketing & Mere Exposure",
+      "authors": "Zajonc, R. B.",
+      "year": 1968,
+      "title": "Attitudinal effects of mere exposure",
+      "publication": "Journal of Personality and Social Psychology, 9(2, Pt. 2), 1-27",
+      "doi": "10.1037/h0025848",
+      "key_finding": "Seminal monograph demonstrating that repeated unreinforced perception of a stimulus is sufficient to enhance positive attitude toward it without conscious persuasion.",
+      "url": "https://doi.org/10.1037/h0025848"
+    },
+    {
+      "id": "bornstein_1989",
+      "theme": "passive_marketing",
+      "theme_label": "Passive Marketing & Mere Exposure",
+      "authors": "Bornstein, R. F.",
+      "year": 1989,
+      "title": "Exposure and affect: Overview and meta-analysis of research, 1968-1987",
+      "publication": "Psychological Bulletin, 106(2), 265-289",
+      "doi": "10.1037/0033-2909.106.2.265",
+      "key_finding": "Meta-analysis of 208 independent experiments (mean r = .26) showing mere exposure effects are reliable and stronger under brief exposure without conscious recognition.",
+      "url": "https://doi.org/10.1037/0033-2909.106.2.265"
+    },
+    {
+      "id": "janiszewski_1993",
+      "theme": "passive_marketing",
+      "theme_label": "Passive Marketing & Mere Exposure",
+      "authors": "Janiszewski, C.",
+      "year": 1993,
+      "title": "Preattentive mere exposure effects",
+      "publication": "Journal of Consumer Research, 20(3), 376-392",
+      "doi": "10.1086/209356",
+      "key_finding": "Incidental peripheral exposure to brand names and packaging outside focal attention triggers preattentive fluency and elevates preference even without recall.",
+      "url": "https://doi.org/10.1086/209356"
+    },
+    {
+      "id": "shapiro_macinnis_heckler_1997",
+      "theme": "passive_marketing",
+      "theme_label": "Passive Marketing & Mere Exposure",
+      "authors": "Shapiro, S., MacInnis, D. J., & Heckler, S. E.",
+      "year": 1997,
+      "title": "The effects of incidental ad exposure on the formation of consideration sets",
+      "publication": "Journal of Consumer Research, 24(1), 94-104",
+      "doi": "10.1086/209496",
+      "key_finding": "Incidental ad exposure while reading primary content significantly increases inclusion of the exposed item in consideration sets despite zero explicit memory of the ad.",
+      "url": "https://doi.org/10.1086/209496"
+    },
+    {
+      "id": "davison_1983",
+      "theme": "third_person_effect",
+      "theme_label": "Third-Person Blind Spot",
+      "authors": "Davison, W. P.",
+      "year": 1983,
+      "title": "The third-person effect in communication",
+      "publication": "Public Opinion Quarterly, 47(1), 1-15",
+      "doi": "10.1086/268763",
+      "key_finding": "Identifies the perceptual bias in which individuals overestimate media and advertising influence on others while underestimating or denying it on themselves.",
+      "url": "https://doi.org/10.1086/268763"
+    },
+    {
+      "id": "sun_pan_shen_2008",
+      "theme": "third_person_effect",
+      "theme_label": "Third-Person Blind Spot",
+      "authors": "Sun, Y., Pan, Z., & Shen, L.",
+      "year": 2008,
+      "title": "Understanding the third-person perception: Evidence from a meta-analysis",
+      "publication": "Journal of Communication, 58(2), 280-300",
+      "doi": "10.1111/j.1460-2466.2008.00385.x",
+      "key_finding": "Meta-analysis across 106 studies (372 effect sizes from 60 papers) confirming a robust self-other perceptual gap, strongest for undesirable (d = 0.86) and ambiguous (d = 0.65) influence.",
+      "url": "https://doi.org/10.1111/j.1460-2466.2008.00385.x"
+    },
+    {
+      "id": "tversky_kahneman_1973",
+      "theme": "priming_availability",
+      "theme_label": "Priming & Availability",
+      "authors": "Tversky, A., & Kahneman, D.",
+      "year": 1973,
+      "title": "Availability: A heuristic for judging frequency and probability",
+      "publication": "Cognitive Psychology, 5(2), 207-232",
+      "doi": "10.1016/0010-0285(73)90033-9",
+      "key_finding": "Demonstrates that people judge salience, frequency, and probability by the ease with which relevant instances are retrieved from memory.",
+      "url": "https://doi.org/10.1016/0010-0285(73)90033-9"
+    },
+    {
+      "id": "tulving_schacter_1990",
+      "theme": "priming_availability",
+      "theme_label": "Priming & Availability",
+      "authors": "Tulving, E., & Schacter, D. L.",
+      "year": 1990,
+      "title": "Priming and human memory systems",
+      "publication": "Science, 247(4940), 301-306",
+      "doi": "10.1126/science.2296719",
+      "key_finding": "Establishes perceptual and conceptual priming as a distinct nonconscious memory system where prior exposure facilitates later processing independent of explicit episodic recall.",
+      "url": "https://doi.org/10.1126/science.2296719"
+    },
+    {
+      "id": "rosenberg_siegel_2018",
+      "theme": "controlled_engagement",
+      "theme_label": "Controlled Engagement vs. Detox",
+      "authors": "Rosenberg, B. D., & Siegel, J. T. (reviewing Brehm, J. W., 1966)",
+      "year": 2018,
+      "title": "A 50-year review of psychological reactance theory: Do not read this article",
+      "publication": "Motivation Science, 4(4), 281-300",
+      "doi": "10.1037/mot0000091",
+      "key_finding": "Synthesizes five decades of Brehm's psychological reactance research: prohibiting a valued behavioral freedom arouses aversive reactance that amplifies desire and drives boomerang relapses.",
+      "url": "https://doi.org/10.1037/mot0000091"
+    },
+    {
+      "id": "wegner_1994",
+      "theme": "controlled_engagement",
+      "theme_label": "Controlled Engagement vs. Detox",
+      "authors": "Wegner, D. M.",
+      "year": 1994,
+      "title": "Ironic processes of mental control",
+      "publication": "Psychological Review, 101(1), 34-52",
+      "doi": "10.1037/0033-295X.101.1.34",
+      "key_finding": "Shows that intentional suppression activates an automatic monitoring process searching for the forbidden cue, producing hyperaccessibility and post-suppression rebound under cognitive load.",
+      "url": "https://doi.org/10.1037/0033-295X.101.1.34"
+    },
+    {
+      "id": "radtke_et_al_2022",
+      "theme": "controlled_engagement",
+      "theme_label": "Controlled Engagement vs. Detox",
+      "authors": "Radtke, T., Apel, T., Schenkel, K., Keller, J., & von Lindern, E.",
+      "year": 2022,
+      "title": "Digital detox: An effective solution in the smartphone era? A systematic literature review",
+      "publication": "Mobile Media & Communication, 10(2), 190-215",
+      "doi": "10.1177/20501579211028647",
+      "key_finding": "PRISMA systematic review of 21 studies (N = 3,625, including 12 RCTs) finding highly inconsistent, mostly mixed or null effects of digital detoxes on well-being and self-control.",
+      "url": "https://doi.org/10.1177/20501579211028647"
+    },
+    {
+      "id": "hall_et_al_2021",
+      "theme": "controlled_engagement",
+      "theme_label": "Controlled Engagement vs. Detox",
+      "authors": "Hall, J. A., Xing, C., Ross, E. M., & Johnson, R. M.",
+      "year": 2021,
+      "title": "Experimentally manipulating social media abstinence: Results of a four-week diary study",
+      "publication": "Media Psychology, 24(2), 259-275",
+      "doi": "10.1080/15213269.2019.1688171",
+      "key_finding": "Randomized 4-week daily diary experiment (N = 130 across 0-4 weeks of abstinence) found no significant main effect of social media abstinence on daily well-being, loneliness, or quality of day.",
+      "url": "https://doi.org/10.1080/15213269.2019.1688171"
+    },
+    {
+      "id": "przybylski_et_al_2021",
+      "theme": "controlled_engagement",
+      "theme_label": "Controlled Engagement vs. Detox",
+      "authors": "Przybylski, A. K., Nguyen, T. V. T., Law, W., & Weinstein, N.",
+      "year": 2021,
+      "title": "Does taking a short break from social media have a positive effect on well-being? Evidence from three preregistered field experiments",
+      "publication": "Journal of Technology in Behavioral Science, 6(3), 507-514",
+      "doi": "10.1007/s41347-020-00189-w",
+      "key_finding": "Across three preregistered field experiments, brief social media abstinence produced no measurable gains in positive affect or self-esteem and reduced relatedness when lacking replacement structure.",
+      "url": "https://doi.org/10.1007/s41347-020-00189-w"
+    },
+    {
+      "id": "verduyn_et_al_2017",
+      "theme": "controlled_engagement",
+      "theme_label": "Controlled Engagement vs. Detox",
+      "authors": "Verduyn, P., Ybarra, O., Résibois, M., Jonides, J., & Kross, E.",
+      "year": 2017,
+      "title": "Do social network sites enhance or undermine subjective well-being? A critical review",
+      "publication": "Social Issues and Policy Review, 11(1), 274-302",
+      "doi": "10.1111/sipr.12033",
+      "key_finding": "Critical review showing passive consumption of uncurated feeds undermines subjective well-being, whereas active, intentional, interest-aligned engagement supports well-being.",
+      "url": "https://doi.org/10.1111/sipr.12033"
+    },
+    {
+      "id": "kornell_bjork_2008",
+      "theme": "context_interleaving",
+      "theme_label": "Context Interleaving",
+      "authors": "Kornell, N., & Bjork, R. A.",
+      "year": 2008,
+      "title": "Learning concepts and categories: Is spacing the \"enemy of induction\"?",
+      "publication": "Psychological Science, 19(6), 585-592",
+      "doi": "10.1111/j.1467-9280.2008.02127.x",
+      "key_finding": "Interleaving exemplars across distinct categories boosted inductive generalization over massed/blocked exposure (61% vs. 35% in Exp. 1A, N = 120; 59% vs. 36% in Exp. 1B, N = 72) despite 78% of learners believing massing worked better.",
+      "url": "https://doi.org/10.1111/j.1467-9280.2008.02127.x"
+    }
+  ]
+}

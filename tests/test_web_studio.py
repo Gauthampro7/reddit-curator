@@ -605,7 +605,22 @@ class TestWebStudioServer(unittest.TestCase):
         self.assertIn("easy-btn-launch", index_html)
         self.assertIn("easy-btn-apply", index_html)
         self.assertIn("easy-btn-import-json", index_html)
+        self.assertIn("easy-btn-about", index_html)
+        self.assertIn("easy-preset-preview", index_html)
+        self.assertIn("easy-btn-preview", index_html)
+        self.assertIn("btn-about", index_html)
+        self.assertIn("view-about", index_html)
+        self.assertIn("btn-about-close", index_html)
+        self.assertIn('role="tabpanel"', index_html)
         self.assertIn("setUiMode", app_js)
+        self.assertIn("openAboutView", app_js)
+        self.assertIn("closeAboutView", app_js)
+        self.assertIn("isSafeHttpsUrl", app_js)
+        self.assertIn("renderEasyPresetPreview", app_js)
+        self.assertIn("handleEasyPreview", app_js)
+        self.assertIn("/api/about", app_js)
+        self.assertIn(":focus-visible", styles_css)
+        self.assertIn("body.about-open #view-about", styles_css)
 
         for asset_name, text in (("index.html", index_html), ("styles.css", styles_css), ("app.js", app_js)):
             scrubbed = text.replace("http://www.w3.org/2000/svg", "")
@@ -613,6 +628,93 @@ class TestWebStudioServer(unittest.TestCase):
                 re.search(r"https?://", scrubbed, flags=re.IGNORECASE),
                 f"External URL found in {asset_name}; studio must be 100% offline-capable",
             )
+
+    def test_about_endpoint_and_philosophy_citations(self) -> None:
+        st_about, _, raw_about = self._request("GET", "/api/about")
+        self.assertEqual(st_about, 200)
+        about = json.loads(raw_about.decode("utf-8"))
+        self.assertIn("Reverse Passive Marketing", about.get("title", ""))
+        self.assertGreaterEqual(len(about.get("global_statistics", [])), 4)
+        self.assertEqual(len(about.get("pillars", [])), 3)
+        self.assertEqual(about.get("ontology_subreddit_count"), 292)
+        self.assertEqual(about.get("presets_count"), 17)
+
+        refs = about.get("references", [])
+        self.assertEqual(len(refs), 17)
+        themes = {r.get("theme") for r in refs}
+        self.assertEqual(
+            themes,
+            {
+                "global_scale",
+                "passive_marketing",
+                "third_person_effect",
+                "priming_availability",
+                "controlled_engagement",
+                "context_interleaving",
+            },
+        )
+        serialized = json.dumps(about)
+        self.assertIn("Tversky, A., & Kahneman, D.", serialized)
+        self.assertIn("von Lindern, E.", serialized)
+        self.assertIn("Mobile Media & Communication", serialized)
+        self.assertIn("Media Psychology", serialized)
+        self.assertIn("Journal of Technology in Behavioral Science", serialized)
+        self.assertIn("Motivation Science", serialized)
+        self.assertNotIn("19h 18m", serialized)
+        for expected_doi in (
+            "10.1037/h0025848",
+            "10.1086/209496",
+            "10.1016/0010-0285(73)90033-9",
+            "10.1177/20501579211028647",
+            "10.1080/15213269.2019.1688171",
+            "10.1007/s41347-020-00189-w",
+            "10.1111/j.1467-9280.2008.02127.x",
+        ):
+            self.assertIn(expected_doi, serialized)
+
+        # Ensure philosophy.json uses zero _SECRET_KEYS as dictionary keys
+        raw_phil = json.loads((REPO_ROOT / "curator_data" / "philosophy.json").read_text(encoding="utf-8"))
+        forbidden_keys = {"access_token", "cookies", "cookie", "token_v2", "oauth_token"}
+
+        def _walk_keys(obj: Any) -> None:
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    self.assertNotIn(str(k).lower(), forbidden_keys)
+                    _walk_keys(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _walk_keys(item)
+
+        _walk_keys(raw_phil)
+
+        # Missing philosophy.json falls back cleanly without crashing
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fallback_backend = DefaultStudioBackend(
+                project_root=REPO_ROOT,
+                philosophy_path=Path(tmpdir) / "missing_philosophy.json",
+            )
+            fallback_about = fallback_backend.get_about()
+            self.assertIn("motto", fallback_about)
+            self.assertEqual(fallback_about["references"], [])
+
+    def test_default_backend_offline_dry_run_sync_fallback(self) -> None:
+        from rcurator.cdp_client import CDPError
+
+        real_backend = DefaultStudioBackend(project_root=REPO_ROOT)
+        manifest = real_backend.get_preset("systems_engineering")
+        with patch("rcurator.cdp_client.acquire_reddit_session", side_effect=CDPError("CDP offline")):
+            dry_res = real_backend.sync_manifest(manifest, dry_run=True, cdp_port=9222)
+        self.assertTrue(dry_res["dry_run"])
+        self.assertEqual(dry_res["mode"], "offline_dry_run")
+        self.assertFalse(dry_res["cdp_reachable"])
+        self.assertGreater(len(dry_res["subscriptions"]["subscribed"]), 0)
+        self.assertIsInstance(dry_res["custom_feeds"], dict)
+        self.assertIsNone(dry_res["following_feed"])
+        self.assertGreater(dry_res["analytics"]["composite_health_score"], 0)
+
+        with patch("rcurator.cdp_client.acquire_reddit_session", side_effect=CDPError("CDP offline")):
+            with self.assertRaises(CDPError):
+                real_backend.sync_manifest(manifest, dry_run=False, cdp_port=9222)
 
     def test_default_studio_backend_reads_real_ontology_and_presets_and_passive_cdp(self) -> None:
         real_backend = DefaultStudioBackend(project_root=REPO_ROOT)
@@ -642,9 +744,39 @@ class TestWebStudioServer(unittest.TestCase):
         self.assertEqual(loaded["preset_id"], "linux_ricing_opensource")
         self.assertIn("anchor_subreddits", loaded)
 
-        legacy_raw = json.loads((REPO_ROOT / "curation_manifest.json").read_text(encoding="utf-8"))
-        imported = real_backend.import_manifest(legacy_raw, filename="../curation_manifest.json")
-        self.assertEqual(imported["filename"], "curation_manifest.json")
+        example_raw = json.loads((REPO_ROOT / "manifest.example.json").read_text(encoding="utf-8"))
+        imported_example = real_backend.import_manifest(example_raw, filename="../manifest.example.json")
+        self.assertEqual(imported_example["filename"], "manifest.example.json")
+        self.assertIn("domain_priming_subreddits", imported_example["manifest"])
+        self.assertGreater(imported_example["audit"]["composite_health_score"], 0)
+
+        legacy_v1_raw = {
+            "version": "1.0.0",
+            "name": "Legacy v1 Fixture",
+            "metadata": {
+                "cognitive_distribution": {
+                    "aesthetic_leisure_target_pct": 40,
+                    "cognitive_curiosity_target_pct": 35,
+                    "domain_priming_target_pct": 25,
+                }
+            },
+            "anchor_subreddits": [
+                {"name": "unixporn", "category": "aesthetic_leisure"},
+                {"name": "askscience", "category": "cognitive_curiosity"},
+            ],
+            "tier1_systems_subreddits": [
+                {"name": "rust", "category": "high_signal_systems_priming"},
+            ],
+            "custom_feeds": [
+                {
+                    "feed_name": "systems_focus",
+                    "display_name": "Systems Focus",
+                    "subreddits": ["rust", "linux"],
+                }
+            ],
+        }
+        imported = real_backend.import_manifest(legacy_v1_raw, filename="../legacy_v1.json")
+        self.assertEqual(imported["filename"], "legacy_v1.json")
         self.assertIn("domain_priming_subreddits", imported["manifest"])
         self.assertGreater(imported["audit"]["composite_health_score"], 0)
         with self.assertRaises(StudioHTTPError):

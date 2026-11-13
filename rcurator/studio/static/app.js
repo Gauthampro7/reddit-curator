@@ -6,6 +6,10 @@
   const state = {
     csrfToken: "",
     uiMode: "easy",
+    aboutOpen: false,
+    aboutData: null,
+    aboutTheme: "all",
+    aboutReturnFocusId: null,
     status: null,
     presets: [],
     activePresetId: null,
@@ -16,6 +20,16 @@
     mixerWeights: {},
     lastAudit: null,
   };
+
+  function isSafeHttpsUrl(raw) {
+    if (typeof raw !== "string" || !raw.trim()) return false;
+    try {
+      const parsed = new URL(raw);
+      return parsed.protocol === "https:";
+    } catch (_) {
+      return false;
+    }
+  }
 
   function el(tag, attrs, children) {
     const node = document.createElement(tag);
@@ -135,6 +149,9 @@
   }
 
   function switchTab(tabName) {
+    if (state.aboutOpen) {
+      closeAboutView(false);
+    }
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       const active = btn.getAttribute("data-tab") === tabName;
       btn.classList.toggle("active", active);
@@ -170,6 +187,9 @@
   }
 
   function setUiMode(mode) {
+    if (state.aboutOpen) {
+      closeAboutView(false);
+    }
     const normalized = mode === "advanced" ? "advanced" : "easy";
     state.uiMode = normalized;
     document.body.classList.toggle("mode-easy", normalized === "easy");
@@ -199,6 +219,7 @@
     updateActiveBar();
     updateEasySelectedBadge();
     renderEasyPresets();
+    renderEasyPresetPreview();
     renderInspector();
   }
 
@@ -207,6 +228,104 @@
     if (!badge) return;
     const m = getEffectiveManifest();
     badge.textContent = m ? `Selected: ${m.name || "Custom JSON"}` : "No preset selected";
+  }
+
+  function renderEasyPresetPreview() {
+    const container = document.getElementById("easy-preset-preview");
+    if (!container) return;
+    clearNode(container);
+
+    const m = getEffectiveManifest();
+    if (!m) {
+      container.classList.add("hidden");
+      return;
+    }
+
+    const groups = {
+      aesthetic_leisure: [],
+      cognitive_curiosity: [],
+      domain_priming: [],
+    };
+    const seen = new Set();
+    const pushSub = (entry, fallbackCategory) => {
+      const name = typeof entry === "string" ? entry : entry && entry.name;
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      const cat = (typeof entry === "object" && entry.category) || fallbackCategory;
+      const bucket = groups[cat] ? cat : fallbackCategory;
+      groups[bucket].push(name);
+    };
+
+    for (const entry of m.anchor_subreddits || []) {
+      pushSub(entry, "aesthetic_leisure");
+    }
+    const priming = m.domain_priming_subreddits || m.tier1_systems_subreddits || [];
+    for (const entry of priming) {
+      pushSub(entry, "domain_priming");
+    }
+
+    const gr = m.golden_ratio_distribution || {};
+    const aesPct = Number(gr.aesthetic_leisure_target_pct ?? 40);
+    const cogPct = Number(gr.cognitive_curiosity_target_pct ?? 35);
+    const domPct = Number(gr.domain_priming_target_pct ?? 25);
+
+    container.classList.remove("hidden");
+    container.appendChild(
+      el("div", { class: "easy-preview-head" }, [
+        el("strong", { text: `${m.name || "Custom Pack"} — 3-Pillar Diet Breakdown` }),
+        el("span", {
+          class: "meta-line",
+          text: `Target impression ratio: ${aesPct}% Leisure · ${cogPct}% Curiosity · ${domPct}% Domain`,
+        }),
+      ])
+    );
+
+    const cols = [
+      ["aesthetic_leisure", "Leisure Anchors", `${aesPct}%`, "badge-aes"],
+      ["cognitive_curiosity", "Cognitive Curiosity", `${cogPct}%`, "badge-cog"],
+      ["domain_priming", "Domain Priming", `${domPct}%`, "badge-dom"],
+    ];
+
+    container.appendChild(
+      el(
+        "div",
+        { class: "easy-preview-grid" },
+        cols.map(([key, title, pct, badgeCls]) => {
+          const subs = groups[key];
+          return el("div", { class: "easy-preview-col" }, [
+            el("div", { class: "easy-preview-col-head" }, [
+              el("span", { text: title }),
+              el("span", { class: `badge ${badgeCls}`, text: `${pct} · ${subs.length}` }),
+            ]),
+            el(
+              "div",
+              { class: "chip-row" },
+              subs.length > 0
+                ? subs.map((s) => el("span", { class: "chip", text: `r/${s}` }))
+                : [el("span", { class: "meta-line", text: "None in Tier 1" })]
+            ),
+          ]);
+        })
+      )
+    );
+
+    const feeds = Array.isArray(m.custom_feeds) ? m.custom_feeds : [];
+    if (feeds.length > 0) {
+      const feedNodes = [el("span", { class: "meta-line", text: "Tier-2 Focus Feeds:" })];
+      for (const feed of feeds) {
+        const subs = Array.isArray(feed.subreddits) ? feed.subreddits : [];
+        const label = feed.display_name || feed.feed_name || "Custom Feed";
+        feedNodes.push(
+          el("span", {
+            class: "badge badge-dom",
+            text: `${label} (${subs.length} subs)`,
+          })
+        );
+      }
+      container.appendChild(el("div", { class: "easy-preview-feeds" }, feedNodes));
+    }
   }
 
   function updateActiveBar() {
@@ -657,6 +776,7 @@
           state.excludedSubs.add(key);
         }
         updateActiveBar();
+        renderEasyPresetPreview();
         renderInspector();
       });
 
@@ -807,6 +927,58 @@
     } finally {
       btn.disabled = false;
       btn.textContent = origText;
+    }
+  }
+
+  async function handleEasyPreview() {
+    const m = getEffectiveManifest();
+    if (!m) {
+      showToast("Pick a preset or open a custom JSON file first.", "err");
+      return;
+    }
+    const btn = document.getElementById("easy-btn-preview");
+    const banner = document.getElementById("easy-apply-result");
+    btn.disabled = true;
+    btn.textContent = "Previewing...";
+    banner.className = "easy-banner hidden";
+    clearNode(banner);
+    try {
+      const res = await apiPost("/api/sync", {
+        manifest: m,
+        dry_run: true,
+        prune: false,
+        keep: [],
+        cdp_port: getCdpPort(),
+      });
+      const sync = res.sync || {};
+      const subInfo = sync.subscriptions || {};
+      const toFollow = subInfo.subscribed || [];
+      const already = subInfo.already_subscribed || [];
+      const feedKeys = Object.keys(sync.custom_feeds || {});
+      const healthScore = sync.analytics && sync.analytics.composite_health_score;
+      const healthNote = typeof healthScore === "number" ? ` · Diet Health Score: ${healthScore.toFixed(1)}/100` : "";
+
+      banner.className = "easy-banner";
+      const summaryText = sync.cdp_reachable
+        ? `Live Dry-Run (u/${sync.username || "reddit"}): would follow ${toFollow.length} new communities (${already.length} already followed), configure ${feedKeys.length} topic feed(s), and lock Home to Following${healthNote}.`
+        : `Offline Preview (No Reddit login needed): would follow ${toFollow.length} Tier-1 communities, create ${feedKeys.length} deep-focus custom feed(s), and lock Home to Following${healthNote}.`;
+      banner.appendChild(el("div", { text: summaryText }));
+      if (toFollow.length > 0) {
+        banner.appendChild(
+          el("div", {
+            class: "meta-line",
+            text: `Communities: ${toFollow.slice(0, 12).map((s) => `r/${s}`).join(", ")}${toFollow.length > 12 ? ` (+${toFollow.length - 12} more)` : ""}`,
+          })
+        );
+      }
+      showToast("Preview ready (no changes made to Reddit)");
+    } catch (err) {
+      banner.className = "easy-banner err";
+      banner.textContent = `Preview failed: ${err.message}`;
+      showToast(`Preview failed: ${err.message}`, "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Preview Changes (No Login Needed)";
     }
   }
 
@@ -1342,6 +1514,261 @@
     }
   }
 
+  // --- Mode-Agnostic About & Philosophy View ---
+  async function ensureAboutLoaded() {
+    if (state.aboutData) return state.aboutData;
+    const data = await apiGet("/api/about");
+    state.aboutData = data;
+    return data;
+  }
+
+  function renderAboutReferences() {
+    const grid = document.getElementById("about-references-grid");
+    const countBadge = document.getElementById("about-ref-count");
+    const searchEl = document.getElementById("about-ref-search");
+    if (!grid) return;
+    clearNode(grid);
+
+    const data = state.aboutData || {};
+    const refs = Array.isArray(data.references) ? data.references : [];
+    const query = ((searchEl && searchEl.value) || "").trim().toLowerCase();
+    const activeTheme = state.aboutTheme || "all";
+
+    const filtered = refs.filter((item) => {
+      if (activeTheme !== "all" && item.theme !== activeTheme) return false;
+      if (!query) return true;
+      const hay = [
+        item.authors,
+        item.year,
+        item.title,
+        item.publication,
+        item.doi,
+        item.theme_label,
+        item.key_finding,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(query);
+    });
+
+    if (countBadge) {
+      countBadge.textContent = `${filtered.length} of ${refs.length} Verified Sources`;
+    }
+
+    if (filtered.length === 0) {
+      grid.appendChild(el("div", { class: "meta-line", text: "No matching peer-reviewed sources found." }));
+      return;
+    }
+
+    for (const item of filtered) {
+      const linkNode = isSafeHttpsUrl(item.url)
+        ? el("a", {
+            class: "cite-link",
+            href: item.url,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            text: item.doi ? `DOI: ${item.doi} ↗` : "Verified Source ↗",
+          })
+        : null;
+
+      grid.appendChild(
+        el("article", { class: "ref-card" }, [
+          el("div", {}, [
+            el("div", { class: "action-row-tight" }, [
+              el("span", { class: "badge badge-accent", text: item.theme_label || item.theme || "Research" }),
+              el("span", { class: "badge", text: String(item.year || "") }),
+            ]),
+            el("h3", { class: "ref-title", text: item.title || "" }),
+            el("div", { class: "ref-meta", text: `${item.authors || ""} · ${item.publication || ""}` }),
+          ]),
+          el("p", { class: "ref-finding", text: item.key_finding || "" }),
+          linkNode,
+        ])
+      );
+    }
+  }
+
+  function renderAboutView() {
+    const data = state.aboutData;
+    if (!data) return;
+
+    const titleEl = document.getElementById("about-title");
+    const mottoEl = document.getElementById("about-motto");
+    const sparkEl = document.getElementById("about-spark-summary");
+    const countsRow = document.getElementById("about-counts-row");
+    const statsGrid = document.getElementById("about-stats-grid");
+    const invHead = document.getElementById("about-inversion-heading");
+    const invSum = document.getElementById("about-inversion-summary");
+    const mechList = document.getElementById("about-mechanisms-list");
+    const harmHead = document.getElementById("about-harm-heading");
+    const harmSum = document.getElementById("about-harm-summary");
+    const backfireList = document.getElementById("about-backfire-list");
+    const pillarsGrid = document.getElementById("about-pillars-grid");
+    const controlsGrid = document.getElementById("about-controls-grid");
+    const themeChips = document.getElementById("about-theme-chips");
+
+    if (titleEl && data.title) titleEl.textContent = data.title;
+    if (mottoEl) mottoEl.textContent = data.motto || "";
+    if (sparkEl) sparkEl.textContent = (data.original_spark && data.original_spark.summary) || "";
+
+    if (countsRow) {
+      clearNode(countsRow);
+      const refsCount = Array.isArray(data.references) ? data.references.length : 0;
+      countsRow.appendChild(el("span", { class: "badge badge-accent", text: `${refsCount} Peer-Reviewed & Verified Sources` }));
+      countsRow.appendChild(el("span", { class: "badge badge-aes", text: `${data.ontology_subreddit_count || 0} Ontology Communities` }));
+      countsRow.appendChild(el("span", { class: "badge badge-cog", text: `${data.presets_count || 0} Curated Presets` }));
+    }
+
+    if (statsGrid) {
+      clearNode(statsGrid);
+      for (const stat of data.global_statistics || []) {
+        const srcLink = isSafeHttpsUrl(stat.url)
+          ? el("a", {
+              class: "cite-link",
+              href: stat.url,
+              target: "_blank",
+              rel: "noopener noreferrer",
+              text: `${stat.source || "Source"} ↗`,
+            })
+          : el("span", { class: "meta-line", text: stat.source || "" });
+
+        statsGrid.appendChild(
+          el("article", { class: "about-stat-card" }, [
+            el("div", { class: "about-stat-val", text: stat.value || "" }),
+            el("div", { class: "about-stat-label", text: stat.label || "" }),
+            el("div", { class: "preset-desc", text: stat.detail || "" }),
+            srcLink,
+          ])
+        );
+      }
+    }
+
+    const inv = data.core_inversion || {};
+    if (invHead && inv.heading) invHead.textContent = inv.heading;
+    if (invSum) invSum.textContent = inv.summary || "";
+    if (mechList) {
+      clearNode(mechList);
+      for (const m of inv.mechanisms || []) {
+        mechList.appendChild(
+          el("li", {}, [el("strong", { text: `${m.name}: ` }), m.description || ""])
+        );
+      }
+    }
+
+    const harm = data.harm_reduction_thesis || {};
+    if (harmHead && harm.heading) harmHead.textContent = harm.heading;
+    if (harmSum) harmSum.textContent = harm.summary || "";
+    if (backfireList) {
+      clearNode(backfireList);
+      for (const b of harm.why_bans_backfire || []) {
+        backfireList.appendChild(
+          el("li", {}, [el("strong", { text: `${b.name}: ` }), b.description || ""])
+        );
+      }
+    }
+
+    if (pillarsGrid) {
+      clearNode(pillarsGrid);
+      const badgeMap = {
+        aesthetic_leisure: "badge-aes",
+        cognitive_curiosity: "badge-cog",
+        domain_priming: "badge-dom",
+      };
+      for (const p of data.pillars || []) {
+        pillarsGrid.appendChild(
+          el("div", { class: "about-mini-card" }, [
+            el("div", { class: "action-row-tight" }, [
+              el("span", { class: `badge ${badgeMap[p.id] || "badge-accent"}`, text: `${p.target_pct || 0}% Target` }),
+              el("span", { class: "meta-line", text: p.tier || "" }),
+            ]),
+            el("div", { class: "about-mini-title", text: p.name || "" }),
+            el("div", { class: "preset-desc", text: p.role || "" }),
+          ])
+        );
+      }
+    }
+
+    if (controlsGrid) {
+      clearNode(controlsGrid);
+      for (const c of harm.controls || []) {
+        controlsGrid.appendChild(
+          el("div", { class: "about-mini-card" }, [
+            el("div", { class: "about-mini-title", text: c.name || "" }),
+            el("div", { class: "preset-desc", text: c.description || "" }),
+          ])
+        );
+      }
+    }
+
+    if (themeChips) {
+      clearNode(themeChips);
+      const refs = Array.isArray(data.references) ? data.references : [];
+      const themes = Array.isArray(data.themes) && data.themes.length > 0
+        ? data.themes
+        : [{ id: "all", label: "All Sources" }];
+      for (const t of themes) {
+        const cnt = t.id === "all" ? refs.length : refs.filter((r) => r.theme === t.id).length;
+        const active = (state.aboutTheme || "all") === t.id;
+        themeChips.appendChild(
+          el("button", {
+            type: "button",
+            class: `chip chip-btn${active ? " active" : ""}`,
+            text: `${t.label} (${cnt})`,
+            onclick: () => {
+              state.aboutTheme = t.id;
+              renderAboutView();
+            },
+          })
+        );
+      }
+    }
+
+    renderAboutReferences();
+  }
+
+  async function openAboutView(openerId = null) {
+    if (openerId) {
+      state.aboutReturnFocusId = openerId;
+    } else if (document.activeElement && document.activeElement.id) {
+      state.aboutReturnFocusId = document.activeElement.id;
+    }
+    state.aboutOpen = true;
+    document.body.classList.add("about-open");
+    const section = document.getElementById("view-about");
+    const topBtn = document.getElementById("btn-about");
+    if (section) section.classList.remove("hidden");
+    if (topBtn) {
+      topBtn.classList.add("active");
+      topBtn.setAttribute("aria-pressed", "true");
+    }
+    try {
+      await ensureAboutLoaded();
+      renderAboutView();
+    } catch (err) {
+      showToast(`Failed to load philosophy data: ${err.message}`, "err");
+    }
+    const closeBtn = document.getElementById("btn-about-close");
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function closeAboutView(restoreFocus = true) {
+    state.aboutOpen = false;
+    document.body.classList.remove("about-open");
+    const section = document.getElementById("view-about");
+    const topBtn = document.getElementById("btn-about");
+    if (section) section.classList.add("hidden");
+    if (topBtn) {
+      topBtn.classList.remove("active");
+      topBtn.setAttribute("aria-pressed", "false");
+    }
+    if (restoreFocus && state.aboutReturnFocusId) {
+      const opener = document.getElementById(state.aboutReturnFocusId);
+      if (opener) opener.focus();
+      state.aboutReturnFocusId = null;
+    }
+  }
+
   function setupEvents() {
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.getAttribute("data-tab")));
@@ -1355,6 +1782,16 @@
 
     document.getElementById("btn-mode-easy").addEventListener("click", () => setUiMode("easy"));
     document.getElementById("btn-mode-advanced").addEventListener("click", () => setUiMode("advanced"));
+    document.getElementById("btn-about").addEventListener("click", () => {
+      if (state.aboutOpen) {
+        closeAboutView();
+      } else {
+        openAboutView("btn-about");
+      }
+    });
+    document.getElementById("easy-btn-about").addEventListener("click", () => openAboutView("easy-btn-about"));
+    document.getElementById("btn-about-close").addEventListener("click", () => closeAboutView());
+    document.getElementById("about-ref-search").addEventListener("input", renderAboutReferences);
 
     const importInput = document.getElementById("import-manifest-input");
     const triggerImport = () => {
@@ -1366,6 +1803,7 @@
     document.getElementById("easy-preset-search").addEventListener("input", renderEasyPresets);
     document.getElementById("easy-btn-launch").addEventListener("click", handleEasyLaunch);
     document.getElementById("easy-btn-check").addEventListener("click", refreshStatus);
+    document.getElementById("easy-btn-preview").addEventListener("click", handleEasyPreview);
     document.getElementById("easy-btn-apply").addEventListener("click", handleEasyApply);
     importInput.addEventListener("change", () => {
       if (importInput.files && importInput.files[0]) {
@@ -1406,6 +1844,11 @@
     document.getElementById("btn-refresh-snapshots").addEventListener("click", loadSnapshots);
 
     document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && state.aboutOpen) {
+        ev.preventDefault();
+        closeAboutView();
+        return;
+      }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "o") {
         ev.preventDefault();
         const importInputEl = document.getElementById("import-manifest-input");
@@ -1420,8 +1863,17 @@
       }
       const tag = (ev.target && ev.target.tagName) || "";
       if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+      if (ev.key === "?") {
+        ev.preventDefault();
+        if (state.aboutOpen) {
+          closeAboutView();
+        } else {
+          openAboutView();
+        }
+        return;
+      }
       const tabMap = { "1": "lab", "2": "inspector", "3": "gallery", "4": "analytics", "5": "console" };
-      if (tabMap[ev.key]) {
+      if (tabMap[ev.key] && state.uiMode === "advanced") {
         switchTab(tabMap[ev.key]);
       }
     });

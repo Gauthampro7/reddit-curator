@@ -29,6 +29,7 @@
         <button id="btn-mode-easy" type="button" class="mode-btn active" aria-pressed="true">Easy</button>
         <button id="btn-mode-advanced" type="button" class="mode-btn" aria-pressed="false">Advanced</button>
       </div>
+      <button id="btn-about" type="button" class="btn btn-secondary btn-sm" aria-pressed="false" title="Why Reverse Passive Marketing works (?)">About &amp; Philosophy</button>
       <span id="pill-cdp" class="status-pill status-off adv-only">CDP: offline</span>
       <span id="pill-auth" class="status-pill status-off">Reddit: disconnected</span>
       <span id="pill-ontology" class="status-pill status-info adv-only">Ontology: --</span>
@@ -72,6 +73,13 @@
   <main class="studio-main">
     <!-- EASY MODE (DEFAULT) -->
     <section id="view-easy" class="easy-shell" aria-label="Easy Setup">
+      <div class="easy-motto-bar">
+        <p class="easy-motto-text">
+          <strong>Reverse Passive Marketing:</strong> Don't quit the scroll &mdash; rebalance your feed (40% Leisure &middot; 35% Curiosity &middot; 25% Domain Priming) so casual browsing works for you.
+        </p>
+        <button id="easy-btn-about" type="button" class="btn btn-ghost btn-sm">Why this works &rarr;</button>
+      </div>
+
       <article class="panel easy-step">
         <div class="panel-head">
           <div class="easy-step-title">
@@ -88,6 +96,7 @@
           <input id="easy-preset-search" class="input input-sm" type="search" placeholder="Search topic packs...">
         </div>
         <div id="easy-preset-grid" class="easy-preset-grid"></div>
+        <div id="easy-preset-preview" class="easy-preview hidden" aria-live="polite"></div>
       </article>
 
       <div class="grid-2 mt-gap">
@@ -115,6 +124,7 @@
           </div>
           <p class="panel-desc">Follows your chosen communities, creates topic feeds, and switches your home feed to Following.</p>
           <div class="action-row">
+            <button id="easy-btn-preview" type="button" class="btn btn-secondary">Preview Changes (No Login Needed)</button>
             <button id="easy-btn-apply" type="button" class="btn btn-primary btn-lg">Apply to My Reddit</button>
           </div>
           <div id="easy-apply-result" class="easy-banner hidden"></div>
@@ -123,7 +133,7 @@
     </section>
 
     <!-- VIEW 1: AUTO-CURATE LAB -->
-    <section id="view-lab" class="view active" aria-label="Auto-Curate Lab">
+    <section id="view-lab" class="view active" role="tabpanel" aria-label="Auto-Curate Lab">
       <div class="grid-2">
         <article class="panel">
           <div class="panel-head">
@@ -230,7 +240,7 @@
     </section>
 
     <!-- VIEW 2: EXPLAINABILITY & KNOWLEDGE GRAPH INSPECTOR -->
-    <section id="view-inspector" class="view" aria-label="Explainability and Knowledge Graph Inspector">
+    <section id="view-inspector" class="view" role="tabpanel" aria-label="Explainability and Knowledge Graph Inspector">
       <article class="panel">
         <div class="panel-head">
           <h2>Explainability &amp; Knowledge Graph Inspector</h2>
@@ -258,7 +268,7 @@
     </section>
 
     <!-- VIEW 3: 17-PRESET GALLERY & CONVEX MIXER -->
-    <section id="view-gallery" class="view" aria-label="Preset Gallery and Convex Mixer">
+    <section id="view-gallery" class="view" role="tabpanel" aria-label="Preset Gallery and Convex Mixer">
       <div class="grid-gallery">
         <article class="panel">
           <div class="panel-head">
@@ -291,7 +301,7 @@
     </section>
 
     <!-- VIEW 4: DIET HEALTH & ENTROPY ANALYTICS -->
-    <section id="view-analytics" class="view" aria-label="Diet Health and Entropy Analytics">
+    <section id="view-analytics" class="view" role="tabpanel" aria-label="Diet Health and Entropy Analytics">
       <div class="panel">
         <div class="panel-head">
           <h2>Diet Health &amp; Shannon Entropy Auditor</h2>
@@ -328,7 +338,7 @@
     </section>
 
     <!-- VIEW 5: LIVE SYNC, BROWSER LAUNCHER & ROLLBACK CONSOLE -->
-    <section id="view-console" class="view" aria-label="Live Sync, Browser Launcher and Rollback Console">
+    <section id="view-console" class="view" role="tabpanel" aria-label="Live Sync, Browser Launcher and Rollback Console">
       <div class="grid-2">
         <article class="panel">
           <div class="panel-head">
@@ -390,6 +400,65 @@
           <button id="btn-refresh-snapshots" type="button" class="btn btn-ghost btn-sm">Refresh Snapshots</button>
         </div>
         <div id="snapshots-table-wrap" class="table-wrap"></div>
+      </article>
+    </section>
+
+    <!-- MODE-AGNOSTIC ABOUT & PHILOSOPHY VIEW -->
+    <section id="view-about" class="about-shell hidden" role="dialog" aria-modal="false" aria-labelledby="about-title">
+      <div class="about-hero panel">
+        <div class="about-hero-top">
+          <div>
+            <span class="mono-label">CORE THESIS &amp; EVIDENCE</span>
+            <h1 id="about-title" class="about-title">Reverse Passive Marketing &amp; Controlled Engagement</h1>
+          </div>
+          <button id="btn-about-close" type="button" class="btn btn-secondary btn-sm">&larr; Back to Studio</button>
+        </div>
+        <blockquote id="about-motto" class="about-motto"></blockquote>
+        <p id="about-spark-summary" class="panel-desc"></p>
+        <div id="about-counts-row" class="chip-row"></div>
+      </div>
+
+      <div id="about-stats-grid" class="about-stats-grid mt-gap"></div>
+
+      <div class="grid-2 mt-gap">
+        <article class="panel">
+          <div class="panel-head">
+            <h2 id="about-inversion-heading">Core Thesis: Reverse Passive Marketing</h2>
+            <span class="badge badge-accent">Attentional Inversion</span>
+          </div>
+          <p id="about-inversion-summary" class="panel-desc"></p>
+          <ul id="about-mechanisms-list" class="about-list"></ul>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2 id="about-harm-heading">Controlled Engagement Over Prohibition</h2>
+            <span class="badge badge-cog">Harm Reduction</span>
+          </div>
+          <p id="about-harm-summary" class="panel-desc"></p>
+          <ul id="about-backfire-list" class="about-list"></ul>
+        </article>
+      </div>
+
+      <article class="panel mt-gap">
+        <div class="panel-head">
+          <h2>Three-Pillar Golden Ratio &amp; Architectural Controls</h2>
+          <span class="badge badge-aes">40 / 35 / 25 + Tier 2</span>
+        </div>
+        <div id="about-pillars-grid" class="about-pillars-grid"></div>
+        <div id="about-controls-grid" class="about-controls-grid mt-gap"></div>
+      </article>
+
+      <article class="panel mt-gap">
+        <div class="panel-head">
+          <h2>Peer-Reviewed Research &amp; Verified Sources</h2>
+          <span id="about-ref-count" class="badge badge-dom">17 Verified Sources</span>
+        </div>
+        <div class="toolbar">
+          <input id="about-ref-search" class="input input-sm" type="search" placeholder="Search authors, findings, venues, or DOIs...">
+        </div>
+        <div id="about-theme-chips" class="chip-row"></div>
+        <div id="about-references-grid" class="about-refs-grid"></div>
       </article>
     </section>
   </main>

@@ -385,11 +385,13 @@ class DefaultStudioBackend:
         presets_dir: Path | None = None,
         snapshots_dir: Path | None = None,
         cdp_port: int = DEFAULT_CDP_PORT,
+        philosophy_path: Path | None = None,
     ) -> None:
         self.project_root = (project_root or Path(__file__).resolve().parents[2]).resolve()
         self.ontology_path = (ontology_path or (self.project_root / "curator_data" / "subreddit_ontology.json")).resolve()
         self.presets_dir = (presets_dir or (self.project_root / "presets")).resolve()
         self.snapshots_dir = (snapshots_dir or (self.project_root / ".curator_snapshots")).resolve()
+        self.philosophy_path = (philosophy_path or (self.project_root / "curator_data" / "philosophy.json")).resolve()
         self.cdp_port = int(cdp_port)
         self._ontology_cache: dict[str, Any] | None = None
 
@@ -517,6 +519,59 @@ class DefaultStudioBackend:
             "presets_count": presets_count,
             "browsers": browsers,
         }
+
+    def get_about(self) -> dict[str, Any]:
+        """Return project philosophy, verified statistics, and peer-reviewed bibliography."""
+        ontology = self._load_ontology_raw()
+        subs = ontology.get("subreddits", {})
+        ontology_count = len(subs) if isinstance(subs, (dict, list)) else 0
+        presets_count = len(list(self.presets_dir.glob("*.json"))) if self.presets_dir.is_dir() else 0
+
+        data: dict[str, Any] = {}
+        if self.philosophy_path.is_file():
+            try:
+                with self.philosophy_path.open("r", encoding="utf-8") as fh:
+                    loaded = json.load(fh)
+                if isinstance(loaded, dict):
+                    data = dict(loaded)
+            except (OSError, json.JSONDecodeError):
+                data = {}
+
+        if not data:
+            data = {
+                "version": "2.0.0",
+                "title": "Reverse Passive Marketing & Controlled Engagement",
+                "motto": (
+                    "You do not need to quit the scroll to reclaim your mind — "
+                    "flip passive ambient marketing into deliberate cognitive priming."
+                ),
+                "original_spark": {
+                    "heading": "The Spark: BTL Conditioning in Reverse",
+                    "summary": (
+                        "Ambient feed repetition shapes mental availability without explicit persuasion. "
+                        "reddit-curator inverts that loop into a transparent 40/35/25 user-controlled diet."
+                    ),
+                },
+                "core_inversion": {
+                    "heading": "Core Thesis: Reverse Passive Marketing",
+                    "summary": "Balance Aesthetic Leisure (40%), Cognitive Curiosity (35%), and Domain Priming (25%).",
+                    "mechanisms": [],
+                },
+                "harm_reduction_thesis": {
+                    "heading": "Controlled Engagement Over Prohibition",
+                    "summary": "Structured feed architecture avoids psychological reactance and ironic rebound.",
+                    "why_bans_backfire": [],
+                    "controls": [],
+                },
+                "global_statistics": [],
+                "pillars": [],
+                "themes": [{"id": "all", "label": "All Sources"}],
+                "references": [],
+            }
+
+        data["ontology_subreddit_count"] = ontology_count
+        data["presets_count"] = presets_count
+        return data
 
     def list_presets(self) -> list[dict[str, Any]]:
         if not self.presets_dir.is_dir():
@@ -864,9 +919,18 @@ class DefaultStudioBackend:
         cdp_port: int | None = None,
     ) -> dict[str, Any]:
         target_port = _validate_cdp_port(cdp_port, self.cdp_port)
+        desired: list[str] = []
+        seen: set[str] = set()
+        priming = manifest.get("domain_priming_subreddits") or manifest.get("tier1_systems_subreddits") or []
+        for entry in list(manifest.get("anchor_subreddits") or []) + list(priming):
+            name = entry.get("name") if isinstance(entry, dict) else str(entry)
+            if name and name.lower() not in seen:
+                seen.add(name.lower())
+                desired.append(name)
+
         try:
             from rcurator.cdp_client import acquire_reddit_session, activate_following_feed
-            from rcurator.reddit_api import RedditAPIClient
+            from rcurator.reddit_api import RedditAPIClient, _partition_feed_subreddits
             from rcurator.state import SnapshotManager
         except ImportError as exc:
             raise StudioHTTPError(
@@ -874,7 +938,57 @@ class DefaultStudioBackend:
                 f"Runtime sync dependencies unavailable: {exc}",
             ) from exc
 
-        session = acquire_reddit_session(target_port)
+        try:
+            session = acquire_reddit_session(target_port)
+        except Exception as exc:
+            if not dry_run:
+                raise
+            analytics: dict[str, Any] | None = None
+            try:
+                analytics = self.audit_manifest(manifest)
+            except Exception:
+                analytics = None
+            custom_feeds_preview: dict[str, dict[str, Any]] = {}
+            for feed in list(manifest.get("custom_feeds") or []):
+                if not isinstance(feed, dict):
+                    continue
+                raw_name = str(feed.get("feed_name") or "focus_domain").strip() or "focus_domain"
+                display_name = str(feed.get("display_name") or raw_name)
+                subs = [str(s).strip() for s in (feed.get("subreddits") or []) if str(s).strip()]
+                try:
+                    partitions = _partition_feed_subreddits(raw_name, display_name, subs)
+                except Exception:
+                    partitions = [(raw_name, display_name, subs)]
+                for chunk_name, chunk_display, chunk_subs in partitions:
+                    custom_feeds_preview[chunk_name] = {
+                        "status": "dry_run",
+                        "display_name": chunk_display,
+                        "http_code": None,
+                        "endpoint": f"/api/multi/user/offline/m/{chunk_name}",
+                        "path": f"/user/offline/m/{chunk_name}",
+                        "subreddits": chunk_subs,
+                        "error": None,
+                    }
+            return {
+                "dry_run": True,
+                "mode": "offline_dry_run",
+                "cdp_reachable": False,
+                "reason": str(exc),
+                "username": None,
+                "snapshot_id": None,
+                "subscriptions": {
+                    "dry_run": True,
+                    "already_subscribed": [],
+                    "subscribed": desired,
+                    "unsubscribed": [],
+                    "kept_unmanaged": [],
+                    "failed": [],
+                },
+                "custom_feeds": custom_feeds_preview,
+                "following_feed": None,
+                "analytics": analytics,
+            }
+
         api = RedditAPIClient(session.access_token, session.username)
         snapshot_id: str | None = None
         if not dry_run:
@@ -887,15 +1001,6 @@ class DefaultStudioBackend:
                 manifest,
             )
             snapshot_id = snap.get("snapshot_id")
-
-        desired: list[str] = []
-        seen: set[str] = set()
-        priming = manifest.get("domain_priming_subreddits") or manifest.get("tier1_systems_subreddits") or []
-        for entry in list(manifest.get("anchor_subreddits") or []) + list(priming):
-            name = entry.get("name") if isinstance(entry, dict) else str(entry)
-            if name and name.lower() not in seen:
-                seen.add(name.lower())
-                desired.append(name)
 
         subs_result = api.sync_subscriptions(
             desired,
@@ -911,14 +1016,22 @@ class DefaultStudioBackend:
         if not dry_run and manifest.get("feed_mode", "following") == "following":
             following_result = activate_following_feed(session.ws_url)
 
-        return {
+        result: dict[str, Any] = {
             "dry_run": bool(dry_run),
+            "cdp_reachable": True,
             "username": session.username,
             "snapshot_id": snapshot_id,
             "subscriptions": subs_result,
             "custom_feeds": feeds_result,
             "following_feed": following_result,
         }
+        if dry_run:
+            result["mode"] = "live_dry_run"
+            try:
+                result["analytics"] = self.audit_manifest(manifest)
+            except Exception:
+                result["analytics"] = None
+        return result
 
     def list_snapshots(self) -> list[dict[str, Any]]:
         try:
@@ -1149,6 +1262,11 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
             if path == "/api/snapshots":
                 snapshots = self.studio_server.backend.list_snapshots()
                 self._send_json(HTTPStatus.OK, {"snapshots": snapshots})
+                return
+
+            if path == "/api/about":
+                about_data = self.studio_server.backend.get_about()
+                self._send_json(HTTPStatus.OK, about_data)
                 return
 
             self._send_json(HTTPStatus.NOT_FOUND, {"error": f"Unknown endpoint: {path}"})

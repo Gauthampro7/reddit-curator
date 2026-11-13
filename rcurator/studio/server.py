@@ -7,12 +7,14 @@ traversal validation, in-memory upload caps, and workspace blocklists.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
 import secrets
 import socket
 import urllib.parse
+import urllib.request
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -327,6 +329,41 @@ def _normalize_ratio(raw_ratio: Any) -> tuple[int, int, int]:
     return (int(a), int(b), int(c))
 
 
+def _validate_cdp_port(raw_port: Any, default: int = DEFAULT_CDP_PORT) -> int:
+    """Validate an optional CDP port number in the non-privileged user range."""
+    if raw_port is None or raw_port == "":
+        return int(default)
+    if isinstance(raw_port, bool):
+        raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "CDP port must be an integer between 1024 and 65535.")
+    if isinstance(raw_port, float) and not raw_port.is_integer():
+        raise StudioHTTPError(HTTPStatus.BAD_REQUEST, "CDP port must be an integer between 1024 and 65535.")
+    try:
+        port_val = int(raw_port)
+    except (TypeError, ValueError) as exc:
+        raise StudioHTTPError(
+            HTTPStatus.BAD_REQUEST,
+            "CDP port must be an integer between 1024 and 65535.",
+        ) from exc
+    if not (1024 <= port_val <= 65535):
+        raise StudioHTTPError(
+            HTTPStatus.BAD_REQUEST,
+            "CDP port must be between 1024 and 65535.",
+        )
+    return port_val
+
+
+def _is_reddit_url(url: str) -> bool:
+    """Strictly verify a browser tab URL belongs to reddit.com."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    hostname = (parsed.hostname or "").lower()
+    return hostname == "reddit.com" or hostname.endswith(".reddit.com")
+
+
 def _extract_manifest(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(payload.get("manifest"), dict):
         return payload["manifest"]
@@ -366,7 +403,94 @@ class DefaultStudioBackend:
         self._ontology_cache = data
         return data
 
-    def get_status(self) -> dict[str, Any]:
+    def _probe_cdp_passive(self, target_port: int) -> tuple[bool, bool, str | None]:
+        """Passively probe CDP /json/list and existing Reddit tabs without mutating browser state."""
+        cdp_connected = False
+        authenticated = False
+        username: str | None = None
+
+        targets: list[dict[str, Any]] = []
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{target_port}/json/list")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                if resp.status == 200:
+                    parsed = json.loads(resp.read().decode("utf-8", errors="replace"))
+                    if isinstance(parsed, list):
+                        cdp_connected = True
+                        targets = [t for t in parsed if isinstance(t, dict)]
+        except Exception:
+            return False, False, None
+
+        reddit_ws_url: str | None = None
+        for tab in targets:
+            if tab.get("type") == "page" and _is_reddit_url(str(tab.get("url") or "")):
+                ws_url = tab.get("webSocketDebuggerUrl")
+                if isinstance(ws_url, str) and ws_url.startswith("ws://"):
+                    reddit_ws_url = ws_url
+                    break
+
+        if not reddit_ws_url:
+            return cdp_connected, False, None
+
+        token: str | None = None
+        try:
+            from rcurator.cdp_client import CDPClient
+
+            async def _read_token() -> str | None:
+                async with CDPClient(reddit_ws_url) as client:
+                    res = await client.send(
+                        "Runtime.evaluate",
+                        {
+                            "expression": "(() => { try { return localStorage.getItem('chat:access-token'); } catch (e) { return null; } })()",
+                            "returnByValue": True,
+                        },
+                        timeout=1.5,
+                    )
+                    raw_val = ((res.get("result") or {}).get("value")) if isinstance(res, dict) else None
+                    if isinstance(raw_val, str) and raw_val:
+                        try:
+                            tok_obj = json.loads(raw_val)
+                            if isinstance(tok_obj, dict) and tok_obj.get("token"):
+                                return str(tok_obj["token"])
+                        except json.JSONDecodeError:
+                            pass
+                    cookies_res = await client.send(
+                        "Network.getCookies",
+                        {"urls": ["https://www.reddit.com", "https://oauth.reddit.com"]},
+                        timeout=1.5,
+                    )
+                    for cookie in (cookies_res.get("cookies") or []):
+                        if isinstance(cookie, dict) and cookie.get("name") == "token_v2" and cookie.get("value"):
+                            return str(cookie["value"])
+                    return None
+
+            token = asyncio.run(asyncio.wait_for(_read_token(), timeout=2.0))
+        except Exception:
+            token = None
+
+        if token:
+            try:
+                me_req = urllib.request.Request(
+                    "https://oauth.reddit.com/api/v1/me?raw_json=1",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "User-Agent": "reddit-curator/2.0 (local studio passive probe)",
+                    },
+                )
+                with urllib.request.urlopen(me_req, timeout=2.0) as me_resp:
+                    if me_resp.status == 200:
+                        me_data = json.loads(me_resp.read().decode("utf-8", errors="replace"))
+                        if isinstance(me_data, dict) and me_data.get("name"):
+                            authenticated = True
+                            username = str(me_data["name"])
+            except Exception:
+                authenticated = False
+                username = None
+
+        return cdp_connected, authenticated, username
+
+    def get_status(self, cdp_port: int | None = None) -> dict[str, Any]:
+        target_port = _validate_cdp_port(cdp_port, self.cdp_port)
         ontology = self._load_ontology_raw()
         subs = ontology.get("subreddits", {})
         ontology_count = len(subs) if isinstance(subs, (dict, list)) else 0
@@ -380,26 +504,12 @@ class DefaultStudioBackend:
         except Exception:
             browsers = []
 
-        cdp_connected = False
-        authenticated = False
-        username: str | None = None
-        try:
-            from rcurator.cdp_client import acquire_reddit_session
-
-            session = acquire_reddit_session(self.cdp_port)
-            if session is not None:
-                cdp_connected = True
-                username = getattr(session, "username", None)
-                authenticated = bool(username and getattr(session, "access_token", None))
-        except Exception:
-            cdp_connected = False
-            authenticated = False
-            username = None
+        cdp_connected, authenticated, username = self._probe_cdp_passive(target_port)
 
         return {
             "ok": True,
             "version": "2.0.0",
-            "cdp_port": self.cdp_port,
+            "cdp_port": target_port,
             "cdp_connected": cdp_connected,
             "authenticated": authenticated,
             "username": username,
@@ -541,6 +651,13 @@ class DefaultStudioBackend:
         query_text = str(payload.get("query") or "").strip()
         if query_text:
             known_phrases = getattr(ontology, "known_phrases", ()) or ()
+            if not known_phrases:
+                try:
+                    from rcurator.nlp.tokenizer import load_ontology_phrases
+
+                    known_phrases = load_ontology_phrases(self.ontology_path)
+                except Exception:
+                    known_phrases = ()
             tokenizer = TechnicalTokenizer(known_phrases=known_phrases)
             for tok, w in tokenizer.tokenize(query_text):
                 evidences.append(
@@ -555,13 +672,14 @@ class DefaultStudioBackend:
                 )
             sources_used.append("query")
 
+        target_cdp_port = _validate_cdp_port(payload.get("cdp_port"), self.cdp_port)
         online_candidates: list[dict[str, Any]] | None = None
         if payload.get("discover_online") and query_text:
             try:
                 from rcurator.cdp_client import acquire_reddit_session
                 from rcurator.reddit_api import RedditAPIClient
 
-                session = acquire_reddit_session(self.cdp_port)
+                session = acquire_reddit_session(target_cdp_port)
                 if session is not None:
                     api = RedditAPIClient(session.access_token, session.username)
                     online_candidates = api.search_subreddits(query_text, limit=15)
@@ -639,7 +757,12 @@ class DefaultStudioBackend:
         normalized = normalize_manifest(manifest, ontology=ontology)
         return FeedHealthAuditor(ontology).audit_manifest(normalized)
 
-    def audit_live(self, target_ratio: tuple[int, int, int] = (40, 35, 25)) -> dict[str, Any]:
+    def audit_live(
+        self,
+        target_ratio: tuple[int, int, int] = (40, 35, 25),
+        cdp_port: int | None = None,
+    ) -> dict[str, Any]:
+        target_port = _validate_cdp_port(cdp_port, self.cdp_port)
         try:
             from rcurator.analytics import FeedHealthAuditor
             from rcurator.cdp_client import acquire_reddit_session
@@ -651,7 +774,7 @@ class DefaultStudioBackend:
                 f"Live audit dependencies unavailable: {exc}",
             ) from exc
 
-        session = acquire_reddit_session(self.cdp_port)
+        session = acquire_reddit_session(target_port)
         api = RedditAPIClient(session.access_token, session.username)
         live_subs = api.fetch_all_subscriptions()
         sub_names = [entry.get("name", key) for key, entry in live_subs.items()]
@@ -663,7 +786,9 @@ class DefaultStudioBackend:
         manifest: dict[str, Any],
         prune: bool = False,
         keep: list[str] | None = None,
+        cdp_port: int | None = None,
     ) -> dict[str, Any]:
+        target_port = _validate_cdp_port(cdp_port, self.cdp_port)
         try:
             from rcurator.cdp_client import acquire_reddit_session
             from rcurator.reddit_api import RedditAPIClient
@@ -674,7 +799,7 @@ class DefaultStudioBackend:
                 f"Runtime sync dependencies unavailable: {exc}",
             ) from exc
 
-        session = acquire_reddit_session(self.cdp_port)
+        session = acquire_reddit_session(target_port)
         api = RedditAPIClient(session.access_token, session.username)
         live_subs = api.fetch_all_subscriptions()
         live_feeds = api.fetch_custom_feeds()
@@ -693,7 +818,9 @@ class DefaultStudioBackend:
         dry_run: bool = True,
         prune: bool = False,
         keep: list[str] | None = None,
+        cdp_port: int | None = None,
     ) -> dict[str, Any]:
+        target_port = _validate_cdp_port(cdp_port, self.cdp_port)
         try:
             from rcurator.cdp_client import acquire_reddit_session, activate_following_feed
             from rcurator.reddit_api import RedditAPIClient
@@ -704,7 +831,7 @@ class DefaultStudioBackend:
                 f"Runtime sync dependencies unavailable: {exc}",
             ) from exc
 
-        session = acquire_reddit_session(self.cdp_port)
+        session = acquire_reddit_session(target_port)
         api = RedditAPIClient(session.access_token, session.username)
         snapshot_id: str | None = None
         if not dry_run:
@@ -757,7 +884,13 @@ class DefaultStudioBackend:
             return []
         return SnapshotManager(self.snapshots_dir).list_snapshots()
 
-    def rollback(self, snapshot_id: str, dry_run: bool = False) -> dict[str, Any]:
+    def rollback(
+        self,
+        snapshot_id: str,
+        dry_run: bool = False,
+        cdp_port: int | None = None,
+    ) -> dict[str, Any]:
+        target_port = _validate_cdp_port(cdp_port, self.cdp_port)
         if snapshot_id != "latest":
             validate_safe_identifier(snapshot_id, label="snapshot_id")
             if self.snapshots_dir.exists():
@@ -772,11 +905,12 @@ class DefaultStudioBackend:
                 f"Rollback dependencies unavailable: {exc}",
             ) from exc
 
-        session = acquire_reddit_session(self.cdp_port)
+        session = acquire_reddit_session(target_port)
         api = RedditAPIClient(session.access_token, session.username)
         return SnapshotManager(self.snapshots_dir).rollback(snapshot_id, api, dry_run=bool(dry_run))
 
     def launch_browser(self, port: int | None = None, preferred: str | None = None) -> dict[str, Any]:
+        target_port = _validate_cdp_port(port, self.cdp_port)
         try:
             from rcurator.browser import BrowserLauncher
         except ImportError as exc:
@@ -785,8 +919,12 @@ class DefaultStudioBackend:
                 f"Browser launcher unavailable: {exc}",
             ) from exc
 
-        target_port = int(port) if port else self.cdp_port
-        return BrowserLauncher().launch(port=target_port, preferred=preferred)
+        try:
+            return BrowserLauncher().launch(port=target_port, preferred=preferred)
+        except FileNotFoundError as exc:
+            raise StudioHTTPError(HTTPStatus.NOT_FOUND, str(exc)) from exc
+        except ValueError as exc:
+            raise StudioHTTPError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
 
 
 class StudioHTTPServer(ThreadingHTTPServer):
@@ -937,7 +1075,13 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 return
 
             if path == "/api/status":
-                status_data = dict(self.studio_server.backend.get_status())
+                query_params = urllib.parse.parse_qs(parsed.query)
+                raw_cdp_port = query_params.get("cdp_port", [None])[0]
+                if raw_cdp_port is not None:
+                    req_cdp_port = _validate_cdp_port(raw_cdp_port, self.studio_server.cdp_port)
+                    status_data = dict(self.studio_server.backend.get_status(cdp_port=req_cdp_port))
+                else:
+                    status_data = dict(self.studio_server.backend.get_status())
                 status_data["csrf_token"] = self.studio_server.csrf_token
                 status_data["host"] = self.studio_server.server_address[0]
                 status_data["port"] = self.studio_server.server_port
@@ -1001,6 +1145,9 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 workspace_raw = str(payload.get("workspace_path") or "").strip()
                 if workspace_raw:
                     validate_workspace_path(workspace_raw)
+                if "cdp_port" in payload and payload.get("cdp_port") is not None:
+                    payload = dict(payload)
+                    payload["cdp_port"] = _validate_cdp_port(payload.get("cdp_port"), self.studio_server.cdp_port)
                 result = self.studio_server.backend.generate(payload)
                 self._send_json(HTTPStatus.OK, result)
                 return
@@ -1019,7 +1166,13 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
             if path == "/api/audit":
                 if payload.get("live"):
                     target_ratio = _normalize_ratio(payload.get("target_ratio"))
-                    audit_res = self.studio_server.backend.audit_live(target_ratio=target_ratio)
+                    if "cdp_port" in payload and payload.get("cdp_port") is not None:
+                        req_port = _validate_cdp_port(payload.get("cdp_port"), self.studio_server.cdp_port)
+                        audit_res = self.studio_server.backend.audit_live(
+                            target_ratio=target_ratio, cdp_port=req_port
+                        )
+                    else:
+                        audit_res = self.studio_server.backend.audit_live(target_ratio=target_ratio)
                 else:
                     manifest = _extract_manifest(payload)
                     audit_res = self.studio_server.backend.audit_manifest(manifest)
@@ -1030,7 +1183,13 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 manifest = _extract_manifest(payload)
                 prune = bool(payload.get("prune", False))
                 keep = [str(x) for x in (payload.get("keep") or []) if str(x).strip()]
-                diff_res = self.studio_server.backend.compute_diff(manifest, prune=prune, keep=keep)
+                if "cdp_port" in payload and payload.get("cdp_port") is not None:
+                    req_port = _validate_cdp_port(payload.get("cdp_port"), self.studio_server.cdp_port)
+                    diff_res = self.studio_server.backend.compute_diff(
+                        manifest, prune=prune, keep=keep, cdp_port=req_port
+                    )
+                else:
+                    diff_res = self.studio_server.backend.compute_diff(manifest, prune=prune, keep=keep)
                 self._send_json(HTTPStatus.OK, {"diff": diff_res})
                 return
 
@@ -1039,12 +1198,22 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 dry_run = bool(payload.get("dry_run", True))
                 prune = bool(payload.get("prune", False))
                 keep = [str(x) for x in (payload.get("keep") or []) if str(x).strip()]
-                sync_res = self.studio_server.backend.sync_manifest(
-                    manifest,
-                    dry_run=dry_run,
-                    prune=prune,
-                    keep=keep,
-                )
+                if "cdp_port" in payload and payload.get("cdp_port") is not None:
+                    req_port = _validate_cdp_port(payload.get("cdp_port"), self.studio_server.cdp_port)
+                    sync_res = self.studio_server.backend.sync_manifest(
+                        manifest,
+                        dry_run=dry_run,
+                        prune=prune,
+                        keep=keep,
+                        cdp_port=req_port,
+                    )
+                else:
+                    sync_res = self.studio_server.backend.sync_manifest(
+                        manifest,
+                        dry_run=dry_run,
+                        prune=prune,
+                        keep=keep,
+                    )
                 self._send_json(HTTPStatus.OK, {"sync": sync_res})
                 return
 
@@ -1053,13 +1222,21 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 if raw_id != "latest":
                     validate_safe_identifier(raw_id, label="snapshot_id")
                 dry_run = bool(payload.get("dry_run", False))
-                rb_res = self.studio_server.backend.rollback(raw_id, dry_run=dry_run)
+                if "cdp_port" in payload and payload.get("cdp_port") is not None:
+                    req_port = _validate_cdp_port(payload.get("cdp_port"), self.studio_server.cdp_port)
+                    rb_res = self.studio_server.backend.rollback(raw_id, dry_run=dry_run, cdp_port=req_port)
+                else:
+                    rb_res = self.studio_server.backend.rollback(raw_id, dry_run=dry_run)
                 self._send_json(HTTPStatus.OK, {"rollback": rb_res})
                 return
 
             if path == "/api/launch-browser":
                 port_raw = payload.get("port")
-                port_val = int(port_raw) if port_raw is not None else None
+                port_val = (
+                    _validate_cdp_port(port_raw, self.studio_server.cdp_port)
+                    if port_raw is not None and port_raw != ""
+                    else None
+                )
                 preferred = str(payload["browser"]) if payload.get("browser") else None
                 launch_res = self.studio_server.backend.launch_browser(port=port_val, preferred=preferred)
                 self._send_json(HTTPStatus.OK, {"launch": launch_res})

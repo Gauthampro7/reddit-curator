@@ -12,10 +12,13 @@ import threading
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from rcurator.studio.server import (
     MAX_UPLOAD_BYTES,
     DefaultStudioBackend,
+    StudioHTTPError,
+    _validate_cdp_port,
     create_studio_server,
 )
 
@@ -41,13 +44,14 @@ class MockStudioBackend(DefaultStudioBackend):
             }
         ]
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self, cdp_port: int | None = None) -> dict[str, Any]:
+        target_port = _validate_cdp_port(cdp_port, self.cdp_port)
         ontology = self._load_ontology_raw()
         subs = ontology.get("subreddits", {})
         return {
             "ok": True,
             "version": "2.0.0",
-            "cdp_port": self.cdp_port,
+            "cdp_port": target_port,
             "cdp_connected": True,
             "authenticated": True,
             "username": "tester",
@@ -55,7 +59,14 @@ class MockStudioBackend(DefaultStudioBackend):
             "cookies": {"token_v2": "MUST_BE_REDACTED"},
             "ontology_subreddit_count": len(subs),
             "presets_count": len(list(self.presets_dir.glob("*.json"))),
-            "browsers": [{"id": "google-chrome", "label": "Google Chrome"}],
+            "browsers": [
+                {
+                    "browser_id": "com.brave.Browser",
+                    "kind": "flatpak",
+                    "executable": "/usr/bin/flatpak",
+                    "name": "Brave Browser (Flatpak)",
+                }
+            ],
         }
 
     def parse_resume_bytes(self, data: bytes, filename: str = "resume.pdf") -> dict[str, Any]:
@@ -238,14 +249,17 @@ class MockStudioBackend(DefaultStudioBackend):
         }
 
     def launch_browser(self, port: int | None = None, preferred: str | None = None) -> dict[str, Any]:
+        target_port = _validate_cdp_port(port, self.cdp_port)
+        if preferred == "missing-browser":
+            raise StudioHTTPError(404, "Browser not found: missing-browser")
         return {
             "launched": True,
             "reused_existing": False,
-            "browser_id": preferred or "google-chrome",
-            "command": ["google-chrome", f"--remote-debugging-port={port or 9222}"],
+            "browser_id": preferred or "com.brave.Browser",
+            "command": ["flatpak", "run", "com.brave.Browser", f"--remote-debugging-port={target_port}"],
             "pid": 4242,
-            "port": port or 9222,
-            "cdp_http_url": f"http://127.0.0.1:{port or 9222}",
+            "port": target_port,
+            "cdp_http_url": f"http://127.0.0.1:{target_port}",
             "user_data_dir": "/home/tester/.config/reddit-curator/chrome-profile",
         }
 
@@ -523,9 +537,26 @@ class TestWebStudioServer(unittest.TestCase):
         self.assertEqual(st_rb, 200)
         self.assertTrue(rb_res["rollback"]["success"])
 
-        st_launch, launch_res = self._post_json("/api/launch-browser", {"port": 9222})
+        st_launch, launch_res = self._post_json("/api/launch-browser", {"port": 9222, "browser": "com.brave.Browser"})
         self.assertEqual(st_launch, 200)
         self.assertTrue(launch_res["launch"]["launched"])
+        self.assertEqual(launch_res["launch"]["browser_id"], "com.brave.Browser")
+
+    def test_cdp_port_validation_and_browser_errors(self) -> None:
+        st_ok, _, raw_ok = self._request("GET", "/api/status?cdp_port=9333")
+        self.assertEqual(st_ok, 200)
+        self.assertEqual(json.loads(raw_ok.decode("utf-8"))["cdp_port"], 9333)
+
+        for bad_q in ("80", "70000", "abc"):
+            st_bad, _, _ = self._request("GET", f"/api/status?cdp_port={bad_q}")
+            self.assertEqual(st_bad, 400, f"Expected 400 for cdp_port={bad_q!r}")
+
+        for bad_port in (80, 70000, "not-a-port", True):
+            st_lbad, _ = self._post_json("/api/launch-browser", {"port": bad_port})
+            self.assertEqual(st_lbad, 400, f"Expected 400 for launch port={bad_port!r}")
+
+        st_missing, _ = self._post_json("/api/launch-browser", {"port": 9222, "browser": "missing-browser"})
+        self.assertEqual(st_missing, 404)
 
     # --- Frontend XSS & Offline Safety Tests ---
 
@@ -537,6 +568,11 @@ class TestWebStudioServer(unittest.TestCase):
         for unsafe_sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function("):
             self.assertNotIn(unsafe_sink, app_js, f"Unsafe DOM sink {unsafe_sink!r} found in app.js")
 
+        self.assertIsNone(re.search(r"\bstyle\s*:", app_js), "Inline style object key found in app.js; violates style-src 'self'")
+        self.assertNotIn('setAttribute("style"', app_js)
+        self.assertNotIn("setAttribute('style'", app_js)
+        self.assertIn("b.browser_id", app_js)
+
         for asset_name, text in (("index.html", index_html), ("styles.css", styles_css), ("app.js", app_js)):
             scrubbed = text.replace("http://www.w3.org/2000/svg", "")
             self.assertIsNone(
@@ -544,10 +580,26 @@ class TestWebStudioServer(unittest.TestCase):
                 f"External URL found in {asset_name}; studio must be 100% offline-capable",
             )
 
-    def test_default_studio_backend_reads_real_ontology_and_presets(self) -> None:
+    def test_default_studio_backend_reads_real_ontology_and_presets_and_passive_cdp(self) -> None:
         real_backend = DefaultStudioBackend(project_root=REPO_ROOT)
-        status = real_backend.get_status()
+
+        class _FakeResp:
+            status = 200
+
+            def __enter__(self) -> "_FakeResp":
+                return self
+
+            def __exit__(self, *args: Any) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return json.dumps([{"type": "page", "url": "https://example.com/", "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/1"}]).encode("utf-8")
+
+        with patch("urllib.request.urlopen", return_value=_FakeResp()):
+            status = real_backend.get_status(cdp_port=9222)
         self.assertTrue(status["ok"])
+        self.assertTrue(status["cdp_connected"])
+        self.assertFalse(status["authenticated"])
         self.assertEqual(status["ontology_subreddit_count"], 292)
         self.assertEqual(status["presets_count"], 17)
         presets = real_backend.list_presets()

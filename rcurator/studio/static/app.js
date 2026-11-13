@@ -210,9 +210,19 @@
     showToast("Downloaded manifest.json");
   }
 
+  function getCdpPort() {
+    const input = document.getElementById("input-cdp-port");
+    const parsed = Number((input && input.value) || 9222);
+    if (Number.isInteger(parsed) && parsed >= 1024 && parsed <= 65535) {
+      return parsed;
+    }
+    return 9222;
+  }
+
   async function refreshStatus() {
     try {
-      const status = await apiGet("/api/status");
+      const cdpPort = getCdpPort();
+      const status = await apiGet(`/api/status?cdp_port=${encodeURIComponent(cdpPort)}`);
       state.status = status;
       state.csrfToken = status.csrf_token || "";
 
@@ -231,7 +241,7 @@
 
       const cdpBadge = document.getElementById("console-cdp-badge");
       if (cdpBadge) {
-        cdpBadge.textContent = `Port ${status.cdp_port || 9222}`;
+        cdpBadge.textContent = `Port ${status.cdp_port || cdpPort}`;
       }
 
       const browserSelect = document.getElementById("select-browser");
@@ -240,8 +250,8 @@
         clearNode(browserSelect);
         browserSelect.appendChild(el("option", { value: "", text: "Auto-detect best browser" }));
         for (const b of status.browsers) {
-          const id = b.id || b.name || "";
-          const label = b.label || b.name || id;
+          const id = b.browser_id || b.id || b.name || "";
+          const label = b.name || b.label || id;
           if (id) {
             browserSelect.appendChild(el("option", { value: id, text: label }));
           }
@@ -378,6 +388,7 @@
         ],
         tier1_count: Number(document.getElementById("slider-tier1").value),
         discover_online: Boolean(document.getElementById("check-discover-online").checked),
+        cdp_port: getCdpPort(),
       };
 
       const res = await apiPost("/api/generate", payload);
@@ -598,20 +609,32 @@
         el("div", { class: "meter-row" }, [
           el("span", { text: "Lexical" }),
           el("div", { class: "meter-track" }, [
-            el("div", {
-              class: "meter-fill",
-              style: `width: ${Math.min(100, Math.max(0, item.lexical_score * 100)).toFixed(1)}%`,
-            }),
+            svgEl("svg", { viewBox: "0 0 100 7", width: "100%", height: "7", preserveAspectRatio: "none" }, [
+              svgEl("rect", {
+                x: 0,
+                y: 0,
+                width: Math.min(100, Math.max(0, item.lexical_score * 100)).toFixed(1),
+                height: 7,
+                rx: 3.5,
+                fill: "#38bdf8",
+              }),
+            ]),
           ]),
           el("span", { text: item.lexical_score.toFixed(2) }),
         ]),
         el("div", { class: "meter-row" }, [
           el("span", { text: "PageRank" }),
           el("div", { class: "meter-track" }, [
-            el("div", {
-              class: "meter-fill meter-fill-ppr",
-              style: `width: ${Math.min(100, Math.max(0, item.pagerank_score * 100)).toFixed(1)}%`,
-            }),
+            svgEl("svg", { viewBox: "0 0 100 7", width: "100%", height: "7", preserveAspectRatio: "none" }, [
+              svgEl("rect", {
+                x: 0,
+                y: 0,
+                width: Math.min(100, Math.max(0, item.pagerank_score * 100)).toFixed(1),
+                height: 7,
+                rx: 3.5,
+                fill: "#a78bfa",
+              }),
+            ]),
           ]),
           el("span", { text: item.pagerank_score.toFixed(2) }),
         ]),
@@ -819,6 +842,7 @@
     try {
       const res = await apiPost("/api/audit", {
         live: true,
+        cdp_port: getCdpPort(),
         target_ratio: [
           Number(document.getElementById("slider-aes").value),
           Number(document.getElementById("slider-cog").value),
@@ -1026,6 +1050,7 @@
         manifest: m,
         prune: Boolean(document.getElementById("check-prune").checked),
         keep: getKeepList(),
+        cdp_port: getCdpPort(),
       });
       const diff = res.diff || {};
       box.appendChild(
@@ -1052,6 +1077,7 @@
         dry_run: Boolean(dryRun),
         prune: Boolean(document.getElementById("check-prune").checked),
         keep: getKeepList(),
+        cdp_port: getCdpPort(),
       });
       box.appendChild(
         el("div", { class: "code-log", text: JSON.stringify(res.sync || res, null, 2) })
@@ -1125,7 +1151,11 @@
 
   async function handleRollback(snapshotId, dryRun) {
     try {
-      const res = await apiPost("/api/rollback", { snapshot_id: snapshotId, dry_run: dryRun });
+      const res = await apiPost("/api/rollback", {
+        snapshot_id: snapshotId,
+        dry_run: dryRun,
+        cdp_port: getCdpPort(),
+      });
       const box = document.getElementById("diff-preview-box");
       clearNode(box);
       box.appendChild(el("div", { class: "code-log", text: JSON.stringify(res.rollback || res, null, 2) }));
